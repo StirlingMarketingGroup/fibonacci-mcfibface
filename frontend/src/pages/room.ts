@@ -398,6 +398,11 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
   }
 }
 
+function getChatEmoji(message: ChatMessage): string {
+  // Show crown for host, otherwise show their animal emoji
+  return message.participantId === state.hostId ? '👑' : (message.emoji || '')
+}
+
 function appendChatMessage(message: ChatMessage) {
   const chatMessages = document.querySelector('#chat-messages')
   if (!chatMessages) return
@@ -410,8 +415,9 @@ function appendChatMessage(message: ChatMessage) {
     div.className = 'text-sm py-1 text-center'
     div.innerHTML = `<span class="text-gray-500 italic">${renderMarkdown(message.text)}</span>`
   } else {
-    // Regular user messages
-    div.innerHTML = `<span class="mr-1">${message.emoji || ''}</span><span style="color: ${message.color}" class="font-bold">${escapeHtml(message.name)}</span><span class="text-gray-300">: ${renderMarkdown(message.text)}</span>`
+    // Regular user messages - show crown for host
+    const emoji = getChatEmoji(message)
+    div.innerHTML = `<span class="mr-1">${emoji}</span><span style="color: ${message.color}" class="font-bold">${escapeHtml(message.name)}</span><span class="text-gray-300">: ${renderMarkdown(message.text)}</span>`
   }
 
   chatMessages.appendChild(div)
@@ -634,7 +640,7 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
         <div id="chat-messages" class="flex-1 p-3 overflow-y-auto space-y-1">
           ${state.chat.map((m) => m.participantId === 'system'
             ? `<div class="text-sm py-1 text-center"><span class="text-gray-500 italic">${renderMarkdown(m.text)}</span></div>`
-            : `<div class="text-sm py-1"><span class="mr-1">${m.emoji || ''}</span><span style="color: ${m.color}" class="font-bold">${escapeHtml(m.name)}</span><span class="text-gray-300">: ${renderMarkdown(m.text)}</span></div>`
+            : `<div class="text-sm py-1"><span class="mr-1">${getChatEmoji(m)}</span><span style="color: ${m.color}" class="font-bold">${escapeHtml(m.name)}</span><span class="text-gray-300">: ${renderMarkdown(m.text)}</span></div>`
           ).join('')}
         </div>
         <div class="p-3 border-t border-gray-700">
