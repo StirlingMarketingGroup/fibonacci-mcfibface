@@ -278,4 +278,26 @@ test.describe('Voting', () => {
     await alice.expectRevealed()
     await charlie.expectVoteValue('Charlie', '3')
   })
+
+  test('vote persists after page refresh in revealed room', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Both vote, triggering reveal
+    await alice.vote('5')
+    await bob.vote('8')
+    await alice.expectRevealed()
+
+    // Alice refreshes the page
+    await alice.page.reload()
+    await alice.joinRoom()
+
+    // Alice should still see the revealed state with all votes
+    await alice.expectRevealed()
+    await alice.expectVoteValue('Alice', '5')
+    await alice.expectVoteValue('Bob', '8')
+  })
 })

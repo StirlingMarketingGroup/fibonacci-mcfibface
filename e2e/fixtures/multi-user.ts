@@ -40,6 +40,7 @@ export interface TestUser {
   expectConsensus(): Promise<void>
 
   // Connection
+  leaveRoom(): Promise<void>
   disconnect(): Promise<void>
   reconnect(): Promise<void>
 
@@ -186,6 +187,11 @@ class TestUserImpl implements TestUser {
 
   async expectConsensus() {
     await expect(this.page.locator('text=Consensus!')).toBeVisible()
+  }
+
+  async leaveRoom() {
+    await this.page.click('#blackjack-btn')
+    await this.page.waitForTimeout(100)
   }
 
   async disconnect() {

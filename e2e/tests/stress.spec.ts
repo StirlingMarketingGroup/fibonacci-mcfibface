@@ -100,7 +100,7 @@ test.describe('Stress Tests', () => {
     await bob.expectVoteValue('Alice', '8')
   })
 
-  test('user disconnects during voting round', async ({ createUsers }) => {
+  test('user disconnects during voting round (stays in room)', async ({ createUsers }) => {
     const [alice, bob, charlie] = await createUsers(3)
 
     const roomUrl = await alice.createRoom()
@@ -113,19 +113,19 @@ test.describe('Stress Tests', () => {
     await alice.vote('5')
     await bob.vote('8')
 
-    // Charlie disconnects without voting
+    // Charlie disconnects without voting (but doesn't "leave" - still in room)
     await charlie.disconnect()
     await alice.page.waitForTimeout(500)
 
-    // Room should now have 2 participants
-    await alice.expectParticipantCount(2)
+    // Room should still have 3 participants - disconnect doesn't remove users
+    // Only explicit leave or kick removes users
+    await alice.expectParticipantCount(3)
 
-    // Note: Auto-reveal after disconnect is not implemented
-    // The remaining participants still have their votes but reveal doesn't trigger
-    // This is a known limitation - host would need to reset or wait for reconnect
+    // Not revealed because Charlie hasn't voted
     await alice.expectNotRevealed()
     await alice.expectVoteHidden('Alice')
     await alice.expectVoteHidden('Bob')
+    await alice.expectNoVote('Charlie')
   })
 
   test('user reconnects and continues voting', async ({ createUsers }) => {
@@ -253,7 +253,7 @@ test.describe('Stress Tests', () => {
     await charlie.expectRevealed()
   })
 
-  test('all users disconnect except one', async ({ createUsers }) => {
+  test('all users leave except one (via explicit leave)', async ({ createUsers }) => {
     const [alice, bob, charlie] = await createUsers(3)
 
     const roomUrl = await alice.createRoom()
@@ -264,9 +264,9 @@ test.describe('Stress Tests', () => {
 
     await alice.expectParticipantCount(3)
 
-    // Bob and Charlie leave
-    await bob.disconnect()
-    await charlie.disconnect()
+    // Bob and Charlie explicitly leave via button
+    await bob.leaveRoom()
+    await charlie.leaveRoom()
     await alice.page.waitForTimeout(500)
 
     // Alice should be alone and still host

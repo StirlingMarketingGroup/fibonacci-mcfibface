@@ -560,7 +560,7 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
   })
 
   document.querySelector('#blackjack-btn')?.addEventListener('click', () => {
-    connection?.disconnect()
+    connection?.send({ type: 'leave' })
     navigate('/')
   })
 

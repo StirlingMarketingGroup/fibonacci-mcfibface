@@ -50,7 +50,7 @@ test.describe('Join and Leave Room', () => {
     }
   })
 
-  test('user leaves and others see them removed', async ({ createUsers }) => {
+  test('user leaves via button and others see them removed', async ({ createUsers }) => {
     const [alice, bob] = await createUsers(2)
 
     const roomUrl = await alice.createRoom()
@@ -60,15 +60,36 @@ test.describe('Join and Leave Room', () => {
 
     await alice.expectParticipantCount(2)
 
-    // Bob leaves
-    await bob.disconnect()
+    // Bob explicitly leaves via the leave button
+    await bob.leaveRoom()
 
-    // Give time for WebSocket close to propagate
+    // Give time for leave message to propagate
     await alice.page.waitForTimeout(500)
 
     // Alice should now see only herself
     await alice.expectParticipantCount(1)
     await alice.expectParticipants(['Alice'])
+  })
+
+  test('user stays in room after disconnect (browser close)', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    await alice.expectParticipantCount(2)
+
+    // Bob disconnects (browser close, network drop, etc.) without explicitly leaving
+    await bob.disconnect()
+
+    // Give time for WebSocket close
+    await alice.page.waitForTimeout(500)
+
+    // Alice should still see Bob - they didn't explicitly leave
+    await alice.expectParticipantCount(2)
+    await alice.expectParticipants(['Alice', 'Bob'])
   })
 
   test('user reconnects with same identity', async ({ createUsers }) => {
@@ -108,5 +129,39 @@ test.describe('Join and Leave Room', () => {
     await bob.joinRoom('CustomName')
 
     await alice.expectParticipants(['Alice', 'CustomName'])
+  })
+
+  test('user rejoins after explicit leave with same identity', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Get Bob's initial emoji
+    const bobCard = alice.page.locator('.flex.flex-col.items-center', { hasText: 'Bob' })
+    const initialEmoji = await bobCard.locator('.text-lg').textContent()
+
+    await alice.expectParticipantCount(2)
+
+    // Bob explicitly leaves via button
+    await bob.leaveRoom()
+    await alice.page.waitForTimeout(300)
+
+    // Alice should see Bob gone
+    await alice.expectParticipantCount(1)
+
+    // Bob rejoins the same room
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Both should see both participants again
+    await alice.expectParticipantCount(2)
+    await bob.expectParticipantCount(2)
+
+    // Bob should have the same emoji (identity preserved)
+    const rejoinedEmoji = await bobCard.locator('.text-lg').textContent()
+    expect(rejoinedEmoji).toBe(initialEmoji)
   })
 })

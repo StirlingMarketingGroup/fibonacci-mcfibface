@@ -6,6 +6,7 @@ interface Participant {
   emoji: string
   color: string
   vote: string | null
+  left: boolean
 }
 
 interface ChatMessage {
@@ -20,6 +21,7 @@ interface ChatMessage {
 
 interface RoomState {
   participants: Record<string, Participant>
+  votes: Record<string, string> // participantId -> vote (persists across reconnects)
   revealed: boolean
   hostId: string | null
   roundNumber: number
@@ -74,6 +76,7 @@ export class RoomDO extends DurableObject {
       const stored = await this.ctx.storage.get<RoomState>('state')
       this.state = stored || {
         participants: {},
+        votes: {},
         revealed: false,
         hostId: null,
         roundNumber: 1,
@@ -82,6 +85,10 @@ export class RoomDO extends DurableObject {
       // Migration: add chat array if missing
       if (!this.state.chat) {
         this.state.chat = []
+      }
+      // Migration: add votes object if missing
+      if (!this.state.votes) {
+        this.state.votes = {}
       }
     }
     return this.state
@@ -145,14 +152,9 @@ export class RoomDO extends DurableObject {
   }
 
   async webSocketClose(ws: WebSocket) {
-    const participantId = this.getParticipantId(ws)
-    if (participantId) {
-      const state = await this.getState()
-      delete state.participants[participantId]
-      await this.saveState()
-
-      this.broadcast({ type: 'participant_left', participantId })
-    }
+    // Don't remove participant on disconnect - they stay in the room
+    // They only leave if they explicitly click "Leave" or get kicked by host
+    // This allows reconnection without losing their spot
   }
 
   private async handleMessage(ws: WebSocket, data: Record<string, unknown>) {
@@ -170,11 +172,19 @@ export class RoomDO extends DurableObject {
         let isReconnection = false
 
         if (requestedId && state.participants[requestedId]) {
-          // Reconnecting - participant still in state (e.g. brief network blip)
+          // Reconnecting - participant still in state
           participantId = requestedId
           participant = state.participants[requestedId]
           participant.name = data.name as string // Allow name updates
-          isReconnection = true
+
+          if (participant.left) {
+            // User who left is rejoining - unset left flag, broadcast to others
+            participant.left = false
+            isReconnection = false
+          } else {
+            // Brief network blip reconnection - don't broadcast
+            isReconnection = true
+          }
         } else if (requestedId && requestedEmoji && requestedColor) {
           // Rejoining with stored identity (e.g. after worker restart or page refresh)
           // Treat as new join so others see them
@@ -184,7 +194,8 @@ export class RoomDO extends DurableObject {
             name: data.name as string,
             emoji: requestedEmoji,
             color: requestedColor,
-            vote: null,
+            vote: state.votes[requestedId] || null, // Restore vote from persistent storage
+            left: false,
           }
           state.participants[participantId] = participant
           // Not a reconnection - broadcast to others
@@ -200,6 +211,7 @@ export class RoomDO extends DurableObject {
             emoji,
             color,
             vote: null,
+            left: false,
           }
 
           state.participants[participantId] = participant
@@ -217,7 +229,9 @@ export class RoomDO extends DurableObject {
         // Send current state to new participant
         // Hide vote values unless revealed (show hasVoted status instead)
         // But send the participant's own vote so they can restore their selection
-        const participantsForClient = Object.values(state.participants).map(p => ({
+        // Filter out left users
+        const activeParticipants = Object.values(state.participants).filter(p => !p.left)
+        const participantsForClient = activeParticipants.map(p => ({
           ...p,
           vote: state.revealed ? p.vote : (p.id === participantId ? p.vote : (p.vote ? 'hidden' : null)),
         }))
@@ -258,21 +272,22 @@ export class RoomDO extends DurableObject {
         if (!participant || state.revealed) return
 
         participant.vote = data.vote as string
+        state.votes[participantId] = data.vote as string // Persist vote separately
         await this.saveState()
 
         this.broadcast({ type: 'vote_cast', participantId, hasVoted: true })
 
-        // Check if everyone has voted
-        const participants = Object.values(state.participants)
-        const allVoted = participants.every(p => p.vote !== null)
+        // Check if everyone has voted (only consider active, non-left participants)
+        const activeParticipants = Object.values(state.participants).filter(p => !p.left)
+        const allVoted = activeParticipants.every(p => p.vote !== null)
 
-        if (allVoted && participants.length > 0) {
+        if (allVoted && activeParticipants.length > 0) {
           state.revealed = true
           await this.saveState()
 
           this.broadcast({
             type: 'reveal',
-            votes: participants.map(p => ({
+            votes: activeParticipants.map(p => ({
               participantId: p.id,
               vote: p.vote,
             })),
@@ -289,6 +304,7 @@ export class RoomDO extends DurableObject {
         for (const participant of Object.values(state.participants)) {
           participant.vote = null
         }
+        state.votes = {} // Clear persistent votes
         state.revealed = false
         state.roundNumber++
         await this.saveState()
@@ -354,8 +370,10 @@ export class RoomDO extends DurableObject {
           }
         }
 
-        // Remove from state
-        delete state.participants[targetId]
+        // Mark as left (kicked users can rejoin but their identity is preserved)
+        targetParticipant.left = true
+        targetParticipant.vote = null
+        delete state.votes[targetId]
 
         // Add system message about the kick
         const systemMessage: ChatMessage = {
@@ -376,6 +394,32 @@ export class RoomDO extends DurableObject {
 
         this.broadcast({ type: 'participant_left', participantId: targetId })
         this.broadcast({ type: 'chat', message: systemMessage })
+        break
+      }
+
+      case 'leave': {
+        const participantId = this.getParticipantId(ws)
+        if (!participantId) return
+
+        const participant = state.participants[participantId]
+        if (!participant) return
+
+        // Mark participant as left (don't delete - they can rejoin with same identity)
+        participant.left = true
+        participant.vote = null
+        delete state.votes[participantId]
+
+        await this.saveState()
+
+        // Notify others
+        this.broadcast({ type: 'participant_left', participantId })
+
+        // Close the connection
+        try {
+          ws.close(1000, 'User left room')
+        } catch {
+          // Socket might already be closed
+        }
         break
       }
 
