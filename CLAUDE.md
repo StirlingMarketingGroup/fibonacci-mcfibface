@@ -10,7 +10,7 @@ fibonacci-mcfibface is a free, no-account planning poker app for agile teams. Us
 
 **Monorepo with two packages:**
 
-- `frontend/` - Vite + TypeScript + Tailwind CSS static site hosted on GitHub Pages
+- `frontend/` - Vite + TypeScript + Tailwind CSS static site hosted on Cloudflare Pages
 - `worker/` - Cloudflare Worker + Durable Objects for real-time WebSocket communication
 
 **Data flow:** Room state lives entirely in Durable Objects (no external database). Workers handle HTTP routing and WebSocket upgrades. Frontend connects via WebSocket for real-time vote sync.
