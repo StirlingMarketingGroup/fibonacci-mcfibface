@@ -43,6 +43,22 @@ interface RoomState {
 
 const POINT_VALUES = ['.5', '1', '2', '3', '5', '8', '13', '20', '40', '100', '?', '☕', '🦆']
 
+// GIF stickers - name to URL mapping
+const STICKERS: Record<string, { url: string; alt: string }> = {
+  'nope': { url: 'https://media.giphy.com/media/wYyTHMm50f4Dm/giphy.gif', alt: 'Bird shaking head no' },
+  'yes': { url: 'https://media.giphy.com/media/XreQmk7ETCak0/giphy.gif', alt: 'Nodding yes' },
+  'think': { url: 'https://media.giphy.com/media/CaiVJuZGvR8HK/giphy.gif', alt: 'Thinking intensely' },
+  'facepalm': { url: 'https://media.giphy.com/media/XsUtdIeJ0MWMo/giphy.gif', alt: 'Facepalm' },
+  'panic': { url: 'https://media.giphy.com/media/HUkOv6BNWc1HO/giphy.gif', alt: 'Panicking' },
+  'fine': { url: 'https://media.giphy.com/media/QMHoU66sBXqqLqYvGO/giphy.gif', alt: 'This is fine' },
+  'celebrate': { url: 'https://media.giphy.com/media/artj92V8o75VPL7AeQ/giphy.gif', alt: 'Celebrating' },
+  'mindblown': { url: 'https://media.giphy.com/media/xT0xeJpnrWC4XWblEk/giphy.gif', alt: 'Mind blown' },
+  'thumbsup': { url: 'https://media.giphy.com/media/111ebonMs90YLu/giphy.gif', alt: 'Thumbs up' },
+  'waiting': { url: 'https://media.giphy.com/media/tXL4FHPSnVJ0A/giphy.gif', alt: 'Waiting impatiently' },
+  'coffee': { url: 'https://media.giphy.com/media/DrJm6F9poo4aA/giphy.gif', alt: 'Need coffee' },
+  'confused': { url: 'https://media.giphy.com/media/WRQBXSCnEFJIuxktnw/giphy.gif', alt: 'Confused math' },
+}
+
 // Slash commands - maps command to replacement text
 const SLASH_COMMANDS: Record<string, string> = {
   '/shrug': '¯\\_(ツ)_/¯',
@@ -581,6 +597,21 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
               class="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 resize-none overflow-hidden"
               style="min-height: 38px; max-height: 120px;"
             ></textarea>
+            <div class="relative flex items-center" style="height: 38px;">
+              <button type="button" id="sticker-btn" class="w-8 h-8 rounded bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-white text-lg flex items-center justify-center" title="Stickers">
+                🎭
+              </button>
+              <div id="sticker-picker" class="absolute bottom-10 right-0 w-72 p-2 bg-gray-800 border border-gray-600 rounded-lg shadow-xl hidden z-50">
+                <div class="text-xs text-gray-400 mb-2 font-bold">Stickers</div>
+                <div class="grid grid-cols-4 gap-1">
+                  ${Object.entries(STICKERS).map(([name, sticker]) => `
+                    <button type="button" class="sticker-option p-1 rounded hover:bg-gray-700 transition-colors" data-sticker-url="${sticker.url}" title="${sticker.alt}">
+                      <img src="${sticker.url}" alt="${sticker.alt}" class="w-14 h-14 object-cover rounded" loading="lazy" />
+                    </button>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
             <div class="relative group flex items-center" style="height: 38px;">
               <button type="button" class="w-6 h-6 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-white text-xs font-bold flex items-center justify-center">?</button>
               <div class="absolute bottom-8 right-0 w-64 p-3 bg-gray-800 border border-gray-600 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
@@ -597,7 +628,7 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
                   <div class="font-bold text-white mt-3 mb-2">Slash Commands</div>
                   <div class="text-gray-400">/shrug /tableflip /lenny /help</div>
                   <div class="font-bold text-white mt-3 mb-2">Stickers</div>
-                  <div class="text-gray-400">Paste any .gif URL</div>
+                  <div class="text-gray-400">Click 🎭 or paste any .gif URL</div>
                 </div>
               </div>
             </div>
@@ -714,6 +745,36 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
           }
         }
       }
+    })
+  }
+
+  // Sticker picker
+  const stickerBtn = document.querySelector<HTMLButtonElement>('#sticker-btn')
+  const stickerPicker = document.querySelector<HTMLDivElement>('#sticker-picker')
+  if (stickerBtn && stickerPicker) {
+    stickerBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      stickerPicker.classList.toggle('hidden')
+    })
+
+    // Close picker when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!stickerPicker.contains(e.target as Node) && e.target !== stickerBtn) {
+        stickerPicker.classList.add('hidden')
+      }
+    })
+
+    // Handle sticker selection
+    document.querySelectorAll('.sticker-option').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const url = btn.getAttribute('data-sticker-url')
+        if (url) {
+          const sent = connection?.send({ type: 'chat', text: url })
+          if (sent) {
+            stickerPicker.classList.add('hidden')
+          }
+        }
+      })
     })
   }
 }
