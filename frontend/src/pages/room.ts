@@ -1,6 +1,7 @@
 import { getName, setName, getRoomIdentity, setRoomIdentity } from '../lib/storage'
 import { RoomConnection } from '../lib/websocket'
 import { navigate } from '../lib/router'
+import confetti from 'canvas-confetti'
 
 interface Participant {
   id: string
@@ -32,6 +33,36 @@ interface RoomState {
 }
 
 const POINT_VALUES = ['.5', '1', '2', '3', '5', '8', '13', '20', '40', '100', '?', '☕', '🦆']
+
+function fireConfetti() {
+  const duration = 3000
+  const end = Date.now() + duration
+
+  const frame = () => {
+    // Launch from left
+    confetti({
+      particleCount: 3,
+      angle: 60,
+      spread: 55,
+      origin: { x: 0, y: 0.7 },
+      colors: ['#6366f1', '#8b5cf6', '#a855f7', '#22c55e', '#eab308'],
+    })
+    // Launch from right
+    confetti({
+      particleCount: 3,
+      angle: 120,
+      spread: 55,
+      origin: { x: 1, y: 0.7 },
+      colors: ['#6366f1', '#8b5cf6', '#a855f7', '#22c55e', '#eab308'],
+    })
+
+    if (Date.now() < end) {
+      requestAnimationFrame(frame)
+    }
+  }
+
+  frame()
+}
 
 let connection: RoomConnection | null = null
 let state: RoomState = {
@@ -428,6 +459,11 @@ function renderStats(): string {
   const spread = sorted[sorted.length - 1] - sorted[0]
 
   const allSame = numericVotes.every((v) => v === numericVotes[0])
+
+  // Trigger confetti on consensus!
+  if (allSame && numericVotes.length > 1) {
+    fireConfetti()
+  }
 
   return `
     <div class="mt-8 p-6 bg-gray-800 rounded-lg">
