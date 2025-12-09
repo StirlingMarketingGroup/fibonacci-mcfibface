@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="cardGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <!-- Card background -->
+  <rect x="96" y="56" width="320" height="400" rx="24" fill="url(#cardGradient)"/>
+  <!-- Card inner border -->
+  <rect x="112" y="72" width="288" height="368" rx="16" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="4"/>
+  <!-- Fibonacci spiral hint / Number 5 -->
+  <text x="256" y="300" font-family="system-ui, -apple-system, sans-serif" font-size="180" font-weight="bold" fill="white" text-anchor="middle">5</text>
+  <!-- Small corner numbers -->
+  <text x="136" y="120" font-family="system-ui, -apple-system, sans-serif" font-size="36" font-weight="bold" fill="rgba(255,255,255,0.6)">5</text>
+  <text x="376" y="430" font-family="system-ui, -apple-system, sans-serif" font-size="36" font-weight="bold" fill="rgba(255,255,255,0.6)" text-anchor="end">5</text>
+</svg>

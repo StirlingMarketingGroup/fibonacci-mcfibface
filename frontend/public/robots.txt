@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://fibonacci-mcfibface.pages.dev/sitemap.xml
