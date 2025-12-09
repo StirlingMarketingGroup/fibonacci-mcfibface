@@ -154,3 +154,16 @@ fibonacci-mcfibface/
 - Mobile app
 - Jira/GitHub integration
 - Timer/countdown features
+
+## Next Steps
+
+1. **Create GitHub repo** - `gh repo create fibonacci-mcfibface --public`
+2. **Scaffold frontend** - Vite + TypeScript + Tailwind in `frontend/`
+3. **Scaffold worker** - Cloudflare Worker + Durable Object in `worker/`
+4. **Build homepage** - Create room button, name input, localStorage
+5. **Build room UI** - Participant cards, voting buttons, stats display
+6. **Implement Durable Object** - Room state, WebSocket handling, broadcast
+7. **Wire up WebSockets** - Connect frontend to worker
+8. **Add animations** - Card flips, confetti, staggered reveals
+9. **Deploy** - GitHub Pages for frontend, Cloudflare for worker
+10. **Set up GitHub Actions** - Auto-deploy on push
