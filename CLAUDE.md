@@ -50,6 +50,8 @@ npm test -- --grep "pattern"  # Run tests matching pattern
 
 Run tests before committing: `cd e2e && npm test`
 
+**Consider README updates.** When adding features or fixing bugs, consider whether the README should be updated to document the change (e.g., new features, changed behavior, new special values).
+
 ## Point Scale
 
 Valid point values: `.5, 1, 2, 3, 5, 8, 13, 20, 40, 100, ?, ☕, 🦆`
