@@ -112,10 +112,23 @@ export class RoomDO extends DurableObject {
 
     try {
       const data = JSON.parse(message)
+
+      // Handle ping/pong for keepalive
+      if (data.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong' }))
+        return
+      }
+
       await this.handleMessage(ws, data)
     } catch (e) {
       console.error('Failed to parse message:', e)
     }
+  }
+
+  async webSocketError(ws: WebSocket, error: unknown) {
+    console.error('WebSocket error:', error)
+    // Clean up on error
+    await this.webSocketClose(ws)
   }
 
   async webSocketClose(ws: WebSocket) {
@@ -309,6 +322,8 @@ export class RoomDO extends DurableObject {
         const targetParticipant = state.participants[targetId]
         if (!targetParticipant) return
 
+        const targetName = targetParticipant.name
+
         // Find the target's WebSocket and close it
         for (const [targetWs, participantId] of this.sessions.entries()) {
           if (participantId === targetId) {
@@ -323,11 +338,27 @@ export class RoomDO extends DurableObject {
           }
         }
 
-        // Remove from state (webSocketClose will handle the rest)
+        // Remove from state
         delete state.participants[targetId]
+
+        // Add system message about the kick
+        const systemMessage: ChatMessage = {
+          id: crypto.randomUUID(),
+          participantId: 'system',
+          name: 'System',
+          color: '#EF4444', // Red
+          text: `**${targetName}** was kicked from the room`,
+          timestamp: Date.now(),
+        }
+        state.chat.push(systemMessage)
+        if (state.chat.length > 100) {
+          state.chat = state.chat.slice(-100)
+        }
+
         await this.saveState()
 
         this.broadcast({ type: 'participant_left', participantId: targetId })
+        this.broadcast({ type: 'chat', message: systemMessage })
         break
       }
     }

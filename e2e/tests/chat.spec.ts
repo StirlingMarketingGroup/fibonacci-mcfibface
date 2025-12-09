@@ -430,6 +430,44 @@ test.describe('Chat', () => {
     await expect(chatMessages.locator('del', { hasText: 'strikethrough' })).toBeVisible()
   })
 
+  test('text effects are rendered', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Send messages with text effects
+    await alice.sendChat('!rainbow hello world!')
+    await alice.sendChat('!shake shaky text!')
+    await alice.sendChat('!glow glowing!')
+    await alice.sendChat('!party party time!')
+
+    const chatMessages = bob.page.locator('#chat-messages')
+
+    // Check effect classes are applied
+    await expect(chatMessages.locator('.effect-rainbow', { hasText: 'hello world' })).toBeVisible()
+    await expect(chatMessages.locator('.effect-shake', { hasText: 'shaky text' })).toBeVisible()
+    await expect(chatMessages.locator('.effect-glow', { hasText: 'glowing' })).toBeVisible()
+    await expect(chatMessages.locator('.effect-party', { hasText: 'party time' })).toBeVisible()
+  })
+
+  test('GIF URLs are rendered as images', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Send a GIF URL
+    await alice.sendChat('Check this out https://media.giphy.com/media/test/giphy.gif cool right?')
+
+    const chatMessages = bob.page.locator('#chat-messages')
+
+    // Should render as an image with chat-sticker class
+    await expect(chatMessages.locator('img.chat-sticker')).toBeVisible()
+  })
+
   test('each user has consistent color across messages', async ({ createUsers }) => {
     const [alice, bob] = await createUsers(2)
 

@@ -5,6 +5,8 @@ const API_HOST = import.meta.env.PROD
   : window.location.host
 
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000] // Exponential backoff
+const PING_INTERVAL = 30000 // 30 seconds
+const PONG_TIMEOUT = 10000 // 10 seconds to receive pong
 
 export class RoomConnection {
   private ws: WebSocket | null = null
@@ -13,6 +15,8 @@ export class RoomConnection {
   private reconnectTimer: number | null = null
   private manualDisconnect = false
   private joinData: Record<string, unknown> | null = null
+  private pingTimer: number | null = null
+  private pongTimer: number | null = null
 
   constructor(private roomId: string) {}
 
@@ -23,43 +27,91 @@ export class RoomConnection {
     return `${protocol}//${API_HOST}${path}`
   }
 
+  private startHeartbeat() {
+    this.stopHeartbeat()
+    this.pingTimer = window.setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: 'ping' }))
+        // Set timeout for pong response
+        this.pongTimer = window.setTimeout(() => {
+          console.log('Pong timeout - connection dead, reconnecting')
+          this.ws?.close()
+        }, PONG_TIMEOUT)
+      }
+    }, PING_INTERVAL)
+  }
+
+  private stopHeartbeat() {
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer)
+      this.pingTimer = null
+    }
+    if (this.pongTimer) {
+      clearTimeout(this.pongTimer)
+      this.pongTimer = null
+    }
+  }
+
+  private setupWebSocket(ws: WebSocket, onFirstConnect?: () => void) {
+    ws.onopen = () => {
+      this.reconnectAttempt = 0
+      // Re-send join message on reconnect
+      if (this.joinData) {
+        ws.send(JSON.stringify(this.joinData))
+      }
+      this.startHeartbeat()
+      onFirstConnect?.()
+      const handlers = this.handlers.get('connected') || []
+      handlers.forEach((handler) => handler({ type: 'connected' }))
+    }
+
+    ws.onerror = () => {
+      // Will trigger onclose
+    }
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+
+        // Handle pong response
+        if (data.type === 'pong') {
+          if (this.pongTimer) {
+            clearTimeout(this.pongTimer)
+            this.pongTimer = null
+          }
+          return
+        }
+
+        const handlers = this.handlers.get(data.type) || []
+        handlers.forEach((handler) => handler(data))
+      } catch (e) {
+        console.error('Failed to parse message:', e)
+      }
+    }
+
+    ws.onclose = () => {
+      this.stopHeartbeat()
+      if (!this.manualDisconnect) {
+        this.scheduleReconnect()
+      }
+    }
+  }
+
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.manualDisconnect = false
       this.ws = new WebSocket(this.getUrl())
 
-      this.ws.onopen = () => {
-        this.reconnectAttempt = 0
-        // Re-send join message on reconnect
-        if (this.joinData) {
-          this.ws?.send(JSON.stringify(this.joinData))
-        }
-        resolve()
-        const handlers = this.handlers.get('connected') || []
-        handlers.forEach((handler) => handler({ type: 'connected' }))
-      }
-
+      // Special handling for first connect - reject on error
+      const originalOnError = this.ws.onerror
       this.ws.onerror = () => {
         if (this.reconnectAttempt === 0) {
           reject(new Error('WebSocket connection failed'))
         }
+        originalOnError?.call(this.ws)
       }
 
-      this.ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          const handlers = this.handlers.get(data.type) || []
-          handlers.forEach((handler) => handler(data))
-        } catch (e) {
-          console.error('Failed to parse message:', e)
-        }
-      }
-
-      this.ws.onclose = () => {
-        if (!this.manualDisconnect) {
-          this.scheduleReconnect()
-        }
-      }
+      this.setupWebSocket(this.ws, resolve)
     })
   }
 
@@ -73,35 +125,7 @@ export class RoomConnection {
 
     this.reconnectTimer = window.setTimeout(() => {
       this.ws = new WebSocket(this.getUrl())
-
-      this.ws.onopen = () => {
-        this.reconnectAttempt = 0
-        if (this.joinData) {
-          this.ws?.send(JSON.stringify(this.joinData))
-        }
-        const connectedHandlers = this.handlers.get('connected') || []
-        connectedHandlers.forEach((handler) => handler({ type: 'connected' }))
-      }
-
-      this.ws.onerror = () => {
-        // Will trigger onclose which schedules next reconnect
-      }
-
-      this.ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          const messageHandlers = this.handlers.get(data.type) || []
-          messageHandlers.forEach((handler) => handler(data))
-        } catch (e) {
-          console.error('Failed to parse message:', e)
-        }
-      }
-
-      this.ws.onclose = () => {
-        if (!this.manualDisconnect) {
-          this.scheduleReconnect()
-        }
-      }
+      this.setupWebSocket(this.ws)
     }, delay)
   }
 
@@ -130,6 +154,7 @@ export class RoomConnection {
 
   disconnect() {
     this.manualDisconnect = true
+    this.stopHeartbeat()
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null

@@ -95,4 +95,21 @@ test.describe('Kick', () => {
     await alice.expectRevealed()
     await alice.expectVoteValue('Alice', '8')
   })
+
+  test('system message appears in chat when user is kicked', async ({ createUsers }) => {
+    const [alice, bob, charlie] = await createUsers(3)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+    await charlie.goto(roomUrl)
+    await charlie.joinRoom()
+
+    // Alice kicks Bob
+    await alice.kickParticipant('Bob')
+
+    // Alice and Charlie should see system message
+    await alice.expectChatMessage('System', 'Bob')
+    await charlie.expectChatMessage('System', 'Bob')
+  })
 })

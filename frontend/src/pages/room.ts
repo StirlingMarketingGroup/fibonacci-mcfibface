@@ -292,8 +292,28 @@ function escapeHtml(text: string): string {
 }
 
 function renderMarkdown(text: string): string {
+  // Process text effects first (before markdown)
+  // Syntax: !effect text here! where effect is rainbow, shake, glow, or party
+  let processed = text
+    .replace(/!rainbow ([^!]+)!/g, '<span class="effect-rainbow">$1</span>')
+    .replace(/!shake ([^!]+)!/g, '<span class="effect-shake">$1</span>')
+    .replace(/!glow ([^!]+)!/g, '<span class="effect-glow">$1</span>')
+    .replace(/!party ([^!]+)!/g, '<span class="effect-party">$1</span>')
+
+  // Convert GIF URLs to inline images (common GIF hosts)
+  processed = processed.replace(
+    /(https?:\/\/[^\s]+\.gif(?:\?[^\s]*)?)/gi,
+    '<img src="$1" class="chat-sticker" alt="sticker" />'
+  )
+
+  // Also support tenor/giphy embed URLs
+  processed = processed.replace(
+    /https?:\/\/tenor\.com\/view\/[^\s]+/gi,
+    (match) => `<img src="${match}.gif" class="chat-sticker" alt="sticker" onerror="this.outerHTML=this.src" />`
+  )
+
   // Use marked for inline markdown (bold, italic, code, links, strikethrough)
-  return marked.parseInline(text) as string
+  return marked.parseInline(processed) as string
 }
 
 function showConnectionStatus(status: 'connected' | 'reconnecting') {
