@@ -372,6 +372,28 @@ export class RoomDO extends DurableObject {
         this.broadcast({ type: 'chat', message: systemMessage })
         break
       }
+
+      case 'burn': {
+        const requesterId = this.getParticipantId(ws)
+        if (requesterId !== state.hostId) return // Only host can burn
+
+        // Notify all clients the room is being deleted
+        this.broadcast({ type: 'room_burned' })
+
+        // Close all WebSocket connections
+        for (const clientWs of this.ctx.getWebSockets()) {
+          try {
+            clientWs.close(1000, 'Room deleted by host')
+          } catch {
+            // Socket might already be closed
+          }
+        }
+
+        // Clear all state
+        await this.ctx.storage.deleteAll()
+        this.state = null
+        break
+      }
     }
   }
 

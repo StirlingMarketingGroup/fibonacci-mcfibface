@@ -248,6 +248,24 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
     document.querySelector('#back-home-btn')?.addEventListener('click', () => navigate('/'))
   })
 
+  connection.on('room_burned', () => {
+    connection?.disconnect()
+    app.innerHTML = `
+      <div class="flex flex-col items-center justify-center min-h-screen p-8">
+        <div class="text-6xl mb-4">🔥</div>
+        <p class="text-gray-300 text-xl mb-2">This room has been deleted</p>
+        <p class="text-gray-500 mb-6">The host burned the room</p>
+        <button
+          id="create-new-btn"
+          class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg"
+        >
+          Create New Room
+        </button>
+      </div>
+    `
+    document.querySelector('#create-new-btn')?.addEventListener('click', () => navigate('/'))
+  })
+
   try {
     await connection.connect()
     const existingIdentity = getRoomIdentity(roomId)
@@ -377,6 +395,13 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
                 >
                   Reset Round
                 </button>
+                <button
+                  id="burn-btn"
+                  class="bg-red-900 hover:bg-red-800 text-red-300 py-2 px-3 rounded-lg text-sm"
+                  title="Delete this room permanently"
+                >
+                  🔥
+                </button>
               ` : ''}
               <a
                 href="https://github.com/StirlingMarketingGroup/fibonacci-mcfibface"
@@ -498,6 +523,12 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
 
   document.querySelector('#reset-btn')?.addEventListener('click', () => {
     connection?.send({ type: 'reset' })
+  })
+
+  document.querySelector('#burn-btn')?.addEventListener('click', () => {
+    if (confirm('Are you sure you want to permanently delete this room? This cannot be undone.')) {
+      connection?.send({ type: 'burn' })
+    }
   })
 
   document.querySelectorAll('.vote-btn').forEach((btn) => {
