@@ -436,6 +436,12 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
   const chatMessages = document.querySelector('#chat-messages')
   if (chatMessages) {
     chatMessages.scrollTop = chatMessages.scrollHeight
+
+    // Keep scrolled to bottom when images load (they change container height)
+    const resizeObserver = new ResizeObserver(() => {
+      chatMessages.scrollTop = chatMessages.scrollHeight
+    })
+    resizeObserver.observe(chatMessages)
   }
 
   // Event listeners
