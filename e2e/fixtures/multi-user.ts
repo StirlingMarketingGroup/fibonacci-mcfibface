@@ -50,14 +50,6 @@ export interface TestUser {
   // Identity helpers
   getIdentity(): Promise<{ emoji: string; color: string }>
 
-  // Session stats
-  openStats(): Promise<void>
-  closeStats(): Promise<void>
-  expectStatsPanel(): Promise<void>
-  expectStatsPanelContains(text: string): Promise<void>
-  expectStatsPanelRounds(count: number): Promise<void>
-  expectStatsPanelYahtzees(count: number): Promise<void>
-
   // Host election
   expectElectionModal(): Promise<void>
   expectNoElectionModal(): Promise<void>
@@ -244,34 +236,6 @@ class TestUserImpl implements TestUser {
     const colorMatch = style.match(/color:\s*(#[0-9A-Fa-f]{6})/i)
     const color = colorMatch ? colorMatch[1].toUpperCase() : ''
     return { emoji: emoji.trim(), color }
-  }
-
-  async openStats() {
-    await this.page.click('#stats-btn')
-    await this.page.waitForSelector('#stats-panel', { timeout: 5000 })
-  }
-
-  async closeStats() {
-    await this.page.click('#close-stats-btn')
-    await this.page.waitForTimeout(100)
-  }
-
-  async expectStatsPanel() {
-    await expect(this.page.locator('#stats-panel')).toBeVisible()
-  }
-
-  async expectStatsPanelContains(text: string) {
-    await expect(this.page.locator('#stats-panel', { hasText: text })).toBeVisible()
-  }
-
-  async expectStatsPanelRounds(count: number) {
-    const roundsValue = this.page.locator('#stats-panel .text-center:has-text("Rounds") .text-2xl')
-    await expect(roundsValue).toHaveText(String(count))
-  }
-
-  async expectStatsPanelYahtzees(count: number) {
-    const yahtzeeValue = this.page.locator('#stats-panel .text-center:has-text("Yahtzees") .text-2xl')
-    await expect(yahtzeeValue).toHaveText(String(count))
   }
 
   async expectElectionModal() {
