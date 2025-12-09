@@ -2,6 +2,14 @@ import { getName, setName, getRoomIdentity, setRoomIdentity } from '../lib/stora
 import { RoomConnection } from '../lib/websocket'
 import { navigate } from '../lib/router'
 import confetti from 'canvas-confetti'
+import { marked } from 'marked'
+
+// Configure marked for inline-only rendering (no block elements)
+marked.use({
+  renderer: {
+    paragraph: (token) => token.text, // Remove <p> wrapper
+  },
+})
 
 interface Participant {
   id: string
@@ -262,7 +270,7 @@ function appendChatMessage(message: ChatMessage) {
 
   const div = document.createElement('div')
   div.className = 'text-sm py-1'
-  div.innerHTML = `<span style="color: ${message.color}" class="font-bold">${escapeHtml(message.name)}</span><span class="text-gray-300">: ${escapeHtml(message.text)}</span>`
+  div.innerHTML = `<span style="color: ${message.color}" class="font-bold">${escapeHtml(message.name)}</span><span class="text-gray-300">: ${renderMarkdown(message.text)}</span>`
   chatMessages.appendChild(div)
   chatMessages.scrollTop = chatMessages.scrollHeight
 }
@@ -271,6 +279,11 @@ function escapeHtml(text: string): string {
   const div = document.createElement('div')
   div.textContent = text
   return div.innerHTML
+}
+
+function renderMarkdown(text: string): string {
+  // Use marked for inline markdown (bold, italic, code, links, strikethrough)
+  return marked.parseInline(text) as string
 }
 
 function renderRoom(app: HTMLDivElement, roomId: string) {
@@ -342,7 +355,7 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
         <div id="chat-messages" class="flex-1 p-3 overflow-y-auto space-y-1">
           ${state.chat.map((m) => `
             <div class="text-sm py-1">
-              <span style="color: ${m.color}" class="font-bold">${escapeHtml(m.name)}</span><span class="text-gray-300">: ${escapeHtml(m.text)}</span>
+              <span style="color: ${m.color}" class="font-bold">${escapeHtml(m.name)}</span><span class="text-gray-300">: ${renderMarkdown(m.text)}</span>
             </div>
           `).join('')}
         </div>
@@ -403,8 +416,10 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
     if (e.key === 'Enter') {
       const text = chatInput.value.trim()
       if (text) {
-        connection?.send({ type: 'chat', text })
-        chatInput.value = ''
+        const sent = connection?.send({ type: 'chat', text })
+        if (sent) {
+          chatInput.value = ''
+        }
       }
     }
   })

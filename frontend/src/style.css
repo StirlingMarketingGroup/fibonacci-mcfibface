@@ -1,1 +1,22 @@
 @import "tailwindcss";
+
+/* Chat markdown styling */
+#chat-messages code {
+  @apply bg-gray-700 px-1 rounded text-sm font-mono;
+}
+
+#chat-messages a {
+  @apply text-indigo-400 hover:underline;
+}
+
+#chat-messages strong {
+  @apply font-bold text-white;
+}
+
+#chat-messages em {
+  @apply italic;
+}
+
+#chat-messages del {
+  @apply line-through opacity-70;
+}

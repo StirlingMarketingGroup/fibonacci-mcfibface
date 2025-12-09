@@ -45,10 +45,21 @@ export class RoomConnection {
     this.handlers.set(type, handlers)
   }
 
-  send(data: Record<string, unknown>) {
+  send(data: Record<string, unknown>): boolean {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(data))
+      return true
     }
+    // Trigger disconnect if websocket is not open
+    if (this.ws?.readyState !== WebSocket.CONNECTING) {
+      const handlers = this.handlers.get('disconnected') || []
+      handlers.forEach((handler) => handler({ type: 'disconnected' }))
+    }
+    return false
+  }
+
+  isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN
   }
 
   disconnect() {
