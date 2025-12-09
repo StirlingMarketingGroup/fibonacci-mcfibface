@@ -384,6 +384,13 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
   const isHost = state.participantId === state.hostId
   const roomUrl = `${window.location.origin}/room/${roomId}`
 
+  // Preserve chat input value and focus before re-render
+  const existingChatInput = document.querySelector<HTMLTextAreaElement>('#chat-input')
+  const chatInputValue = existingChatInput?.value || ''
+  const chatInputFocused = document.activeElement === existingChatInput
+  const chatInputSelectionStart = existingChatInput?.selectionStart || 0
+  const chatInputSelectionEnd = existingChatInput?.selectionEnd || 0
+
   app.innerHTML = `
     <div class="h-screen flex">
       <!-- Main content -->
@@ -591,10 +598,22 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
   // Chat input with auto-grow
   const chatInput = document.querySelector<HTMLTextAreaElement>('#chat-input')
   if (chatInput) {
+    // Restore preserved chat input value and focus
+    if (chatInputValue) {
+      chatInput.value = chatInputValue
+      chatInput.setSelectionRange(chatInputSelectionStart, chatInputSelectionEnd)
+    }
+    if (chatInputFocused) {
+      chatInput.focus()
+    }
+
     const autoGrow = () => {
       chatInput.style.height = 'auto'
       chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px'
     }
+
+    // Run auto-grow on restored content
+    autoGrow()
 
     chatInput.addEventListener('input', autoGrow)
 
@@ -614,11 +633,12 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
   }
 }
 
-function renderParticipantCard(participant: Participant, isHost: boolean): string {
+function renderParticipantCard(participant: Participant, isCurrentUserHost: boolean): string {
   const isMe = participant.id === state.participantId
+  const isParticipantHost = participant.id === state.hostId
   const hasVoted = participant.vote !== null
   const showVote = state.revealed && participant.vote
-  const canKick = isHost && !isMe
+  const canKick = isCurrentUserHost && !isMe
 
   let cardContent: string
   if (showVote) {
@@ -648,7 +668,7 @@ function renderParticipantCard(participant: Participant, isHost: boolean): strin
         ${cardContent}
       </div>
       <div class="mt-2 text-center">
-        <span class="text-lg">${participant.emoji}</span>
+        <span class="text-lg">${isParticipantHost ? '👑' : participant.emoji}</span>
         <span class="text-sm" style="color: ${participant.color || '#9CA3AF'}">${participant.name}${isMe ? ' (you)' : ''}</span>
       </div>
     </div>
