@@ -93,6 +93,20 @@ const LEAVE_MESSAGES = [
   '**{name}** is outta here!',
 ]
 
+// Consensus celebration messages - {vote} will be replaced with the unanimous vote value
+const CONSENSUS_MESSAGES = [
+  '🎯 **YAHTZEE!** Everyone voted **{vote}**!',
+  '🎉 **UNANIMOUS!** The council has spoken: **{vote}**',
+  '🏆 **PERFECT CONSENSUS!** All voted **{vote}**!',
+  '✨ **GREAT MINDS THINK ALIKE!** Everyone chose **{vote}**',
+  '🎊 **FLAWLESS VICTORY!** Unanimous **{vote}**!',
+  '🔮 **THE PROPHECY IS FULFILLED!** All see **{vote}**',
+  '🎰 **JACKPOT!** Triple (or more) **{vote}**s!',
+  '🤝 **TEAM SYNERGY ACTIVATED!** United on **{vote}**',
+  '⚡ **HIVEMIND ENGAGED!** Collective vote: **{vote}**',
+  '🌟 **LEGENDARY!** Perfect agreement on **{vote}**',
+]
+
 function randomFrom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
 }
@@ -352,6 +366,29 @@ export class RoomDO extends DurableObject {
               vote: p.vote,
             })),
           })
+
+          // Check for consensus (everyone voted the same) - only if 2+ participants
+          if (activeParticipants.length >= 2) {
+            const votes = activeParticipants.map(p => p.vote)
+            const allSame = votes.every(v => v === votes[0])
+            if (allSame && votes[0] !== null) {
+              const consensusMessage: ChatMessage = {
+                id: crypto.randomUUID(),
+                participantId: 'system',
+                name: 'System',
+                emoji: '🎯',
+                color: '#22C55E', // Green
+                text: randomFrom(CONSENSUS_MESSAGES).replace('{vote}', votes[0]),
+                timestamp: Date.now(),
+              }
+              state.chat.push(consensusMessage)
+              if (state.chat.length > 100) {
+                state.chat = state.chat.slice(-100)
+              }
+              await this.saveState()
+              this.broadcast({ type: 'chat', message: consensusMessage })
+            }
+          }
         }
         break
       }

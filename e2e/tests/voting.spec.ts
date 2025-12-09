@@ -300,4 +300,48 @@ test.describe('Voting', () => {
     await alice.expectVoteValue('Alice', '5')
     await alice.expectVoteValue('Bob', '8')
   })
+
+  test('consensus message appears in chat when everyone votes the same', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Both vote the same value
+    await alice.vote('5')
+    await bob.vote('5')
+
+    // Wait for reveal
+    await alice.expectRevealed()
+
+    // Should see a consensus celebration message in chat (contains keywords like YAHTZEE, UNANIMOUS, etc.)
+    const chatMessages = alice.page.locator('#chat-messages')
+    // The message should contain the vote value in bold
+    await expect(chatMessages.locator('strong', { hasText: '5' })).toBeVisible({ timeout: 3000 })
+  })
+
+  test('no consensus message when votes differ', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Vote different values
+    await alice.vote('5')
+    await bob.vote('8')
+
+    // Wait for reveal
+    await alice.expectRevealed()
+
+    // Wait a moment for any messages to arrive
+    await alice.page.waitForTimeout(500)
+
+    // Should NOT see consensus messages (check for common consensus keywords)
+    const chatMessages = alice.page.locator('#chat-messages')
+    await expect(chatMessages.locator('text=YAHTZEE')).not.toBeVisible()
+    await expect(chatMessages.locator('text=UNANIMOUS')).not.toBeVisible()
+    await expect(chatMessages.locator('text=CONSENSUS')).not.toBeVisible()
+  })
 })

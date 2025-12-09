@@ -186,7 +186,8 @@ class TestUserImpl implements TestUser {
   }
 
   async expectConsensus() {
-    await expect(this.page.locator('text=Consensus!')).toBeVisible()
+    // Check for the UI consensus indicator (the green text with emoji in the stats area)
+    await expect(this.page.locator('.text-green-400', { hasText: 'Consensus!' })).toBeVisible()
   }
 
   async leaveRoom() {

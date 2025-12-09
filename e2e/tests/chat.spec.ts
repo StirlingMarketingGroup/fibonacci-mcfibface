@@ -571,4 +571,24 @@ test.describe('Chat', () => {
     const messageHtml = await chatMessage.innerHTML()
     expect(messageHtml).toContain(bobEmoji)
   })
+
+  test('chat input is preserved when someone joins', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+
+    // Alice starts typing a message
+    const chatInput = alice.page.locator('#chat-input')
+    await chatInput.fill('This is my draft message')
+
+    // Bob joins while Alice is typing
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Wait for Alice to see Bob
+    await alice.expectParticipantCount(2)
+
+    // Alice's chat input should still have her draft
+    await expect(chatInput).toHaveValue('This is my draft message')
+  })
 })
