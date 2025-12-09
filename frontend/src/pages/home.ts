@@ -43,6 +43,12 @@ export function renderHomePage() {
     updateButtonState()
   })
 
+  nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && nameInput.value.trim()) {
+      createBtn.click()
+    }
+  })
+
   createBtn.addEventListener('click', () => {
     const name = nameInput.value.trim()
     if (!name) return
