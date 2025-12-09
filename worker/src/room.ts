@@ -19,6 +19,22 @@ interface ChatMessage {
   timestamp: number
 }
 
+interface ParticipantStats {
+  totalVotes: number
+  numericVotes: number[] // For calculating average
+  chaosVotes: number // ?, ☕, 🦆
+  voteTimesMs: number[] // Time from round start to vote
+  consensusCount: number // How often they matched the group consensus
+  participatedRounds: number // Rounds where they were present and voting
+}
+
+interface SessionStats {
+  sessionStartTime: number
+  roundStartTime: number
+  yahtzeeCount: number
+  participantStats: Record<string, ParticipantStats>
+}
+
 interface RoomState {
   participants: Record<string, Participant>
   votes: Record<string, string> // participantId -> vote (persists across reconnects)
@@ -26,6 +42,7 @@ interface RoomState {
   hostId: string | null
   roundNumber: number
   chat: ChatMessage[]
+  stats: SessionStats
 }
 
 const ANIMAL_EMOJIS = [
@@ -149,6 +166,32 @@ function randomFrom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 
+const CHAOS_VOTES = new Set(['?', '☕', '🦆'])
+
+const NUMERIC_VOTE_VALUES: Record<string, number> = {
+  '.5': 0.5,
+  '1': 1,
+  '2': 2,
+  '3': 3,
+  '5': 5,
+  '8': 8,
+  '13': 13,
+  '20': 20,
+  '40': 40,
+  '100': 100,
+}
+
+function initParticipantStats(): ParticipantStats {
+  return {
+    totalVotes: 0,
+    numericVotes: [],
+    chaosVotes: 0,
+    voteTimesMs: [],
+    consensusCount: 0,
+    participatedRounds: 0,
+  }
+}
+
 function getUsedIdentities(participants: Record<string, Participant>): Set<string> {
   const used = new Set<string>()
   for (const p of Object.values(participants)) {
@@ -203,6 +246,7 @@ export class RoomDO extends DurableObject {
   private async getState(): Promise<RoomState> {
     if (!this.state) {
       const stored = await this.ctx.storage.get<RoomState>('state')
+      const now = Date.now()
       this.state = stored || {
         participants: {},
         votes: {},
@@ -210,6 +254,12 @@ export class RoomDO extends DurableObject {
         hostId: null,
         roundNumber: 1,
         chat: [],
+        stats: {
+          sessionStartTime: now,
+          roundStartTime: now,
+          yahtzeeCount: 0,
+          participantStats: {},
+        },
       }
       // Migration: add chat array if missing
       if (!this.state.chat) {
@@ -218,6 +268,15 @@ export class RoomDO extends DurableObject {
       // Migration: add votes object if missing
       if (!this.state.votes) {
         this.state.votes = {}
+      }
+      // Migration: add stats object if missing
+      if (!this.state.stats) {
+        this.state.stats = {
+          sessionStartTime: now,
+          roundStartTime: now,
+          yahtzeeCount: 0,
+          participantStats: {},
+        }
       }
     }
     return this.state
@@ -420,8 +479,31 @@ export class RoomDO extends DurableObject {
         if (!participant || state.revealed) return
 
         const hadVoteBefore = participant.vote !== null
-        participant.vote = data.vote as string
-        state.votes[participantId] = data.vote as string // Persist vote separately
+        const vote = data.vote as string
+        participant.vote = vote
+        state.votes[participantId] = vote // Persist vote separately
+
+        // Track stats only for first vote in this round
+        if (!hadVoteBefore) {
+          if (!state.stats.participantStats[participantId]) {
+            state.stats.participantStats[participantId] = initParticipantStats()
+          }
+          const pStats = state.stats.participantStats[participantId]
+          pStats.totalVotes++
+          pStats.participatedRounds++
+
+          // Track vote time
+          const voteTime = Date.now() - state.stats.roundStartTime
+          pStats.voteTimesMs.push(voteTime)
+
+          // Track numeric vs chaos votes
+          if (CHAOS_VOTES.has(vote)) {
+            pStats.chaosVotes++
+          } else if (vote in NUMERIC_VOTE_VALUES) {
+            pStats.numericVotes.push(NUMERIC_VOTE_VALUES[vote])
+          }
+        }
+
         await this.saveState()
 
         this.broadcast({ type: 'vote_cast', participantId, hasVoted: true })
@@ -482,7 +564,14 @@ export class RoomDO extends DurableObject {
           if (activeParticipants.length >= 2) {
             const votes = activeParticipants.map(p => p.vote)
             const allSame = votes.every(v => v === votes[0])
+
+            // Update consensus stats based on whether each person matched majority
+            this.updateConsensusStats(state, activeParticipants)
+
             if (allSame && votes[0] !== null) {
+              // Track Yahtzee count
+              state.stats.yahtzeeCount++
+
               const consensusMessage: ChatMessage = {
                 id: crypto.randomUUID(),
                 participantId: 'system',
@@ -515,6 +604,7 @@ export class RoomDO extends DurableObject {
         state.votes = {} // Clear persistent votes
         state.revealed = false
         state.roundNumber++
+        state.stats.roundStartTime = Date.now() // Reset timer for vote speed tracking
         await this.saveState()
 
         this.broadcast({ type: 'round_reset', roundNumber: state.roundNumber })
@@ -690,6 +780,13 @@ export class RoomDO extends DurableObject {
         this.state = null
         break
       }
+
+      case 'get_stats': {
+        // Build computed stats to send to client
+        const stats = this.computeStats(state)
+        ws.send(JSON.stringify({ type: 'stats', stats }))
+        break
+      }
     }
   }
 
@@ -703,6 +800,145 @@ export class RoomDO extends DurableObject {
           // Socket might be closed
         }
       }
+    }
+  }
+
+  private updateConsensusStats(state: RoomState, activeParticipants: Participant[]): void {
+    // Find the most common vote (mode)
+    const voteCounts: Record<string, number> = {}
+    for (const p of activeParticipants) {
+      if (p.vote) {
+        voteCounts[p.vote] = (voteCounts[p.vote] || 0) + 1
+      }
+    }
+
+    let maxCount = 0
+    let consensusVote: string | null = null
+    for (const [vote, count] of Object.entries(voteCounts)) {
+      if (count > maxCount) {
+        maxCount = count
+        consensusVote = vote
+      }
+    }
+
+    // Update each participant's consensus count if they matched the majority
+    for (const p of activeParticipants) {
+      if (!state.stats.participantStats[p.id]) {
+        state.stats.participantStats[p.id] = initParticipantStats()
+      }
+      if (p.vote === consensusVote) {
+        state.stats.participantStats[p.id].consensusCount++
+      }
+    }
+  }
+
+  private computeStats(state: RoomState): Record<string, unknown> {
+    const now = Date.now()
+    const sessionDurationMs = now - state.stats.sessionStartTime
+    const sessionDurationMins = Math.floor(sessionDurationMs / 60000)
+
+    // Build per-participant computed stats
+    interface ComputedParticipantStats {
+      name: string
+      emoji: string
+      color: string
+      totalVotes: number
+      avgVote: number | null
+      avgVoteTimeMs: number | null
+      consensusRate: number | null
+      chaosVotes: number
+    }
+
+    const participantStats: ComputedParticipantStats[] = []
+
+    for (const [participantId, pStats] of Object.entries(state.stats.participantStats)) {
+      const participant = state.participants[participantId]
+      if (!participant || participant.left) continue
+
+      const avgVote = pStats.numericVotes.length > 0
+        ? pStats.numericVotes.reduce((a, b) => a + b, 0) / pStats.numericVotes.length
+        : null
+
+      const avgVoteTime = pStats.voteTimesMs.length > 0
+        ? pStats.voteTimesMs.reduce((a, b) => a + b, 0) / pStats.voteTimesMs.length
+        : null
+
+      const consensusRate = pStats.participatedRounds > 0
+        ? pStats.consensusCount / pStats.participatedRounds
+        : null
+
+      participantStats.push({
+        name: participant.name,
+        emoji: participant.emoji,
+        color: participant.color,
+        totalVotes: pStats.totalVotes,
+        avgVote,
+        avgVoteTimeMs: avgVoteTime,
+        consensusRate,
+        chaosVotes: pStats.chaosVotes,
+      })
+    }
+
+    // Find superlatives
+    let fastestVoter: { name: string; emoji: string; avgMs: number } | null = null
+    let slowestVoter: { name: string; emoji: string; avgMs: number } | null = null
+    let mostConsensus: { name: string; emoji: string; rate: number } | null = null
+    let leastConsensus: { name: string; emoji: string; rate: number } | null = null
+    let chaosAgent: { name: string; emoji: string; count: number } | null = null
+    let highestAvg: { name: string; emoji: string; avg: number } | null = null
+    let lowestAvg: { name: string; emoji: string; avg: number } | null = null
+
+    for (const ps of participantStats) {
+      // Fastest/slowest voter
+      if (ps.avgVoteTimeMs !== null) {
+        if (!fastestVoter || ps.avgVoteTimeMs < fastestVoter.avgMs) {
+          fastestVoter = { name: ps.name, emoji: ps.emoji, avgMs: ps.avgVoteTimeMs }
+        }
+        if (!slowestVoter || ps.avgVoteTimeMs > slowestVoter.avgMs) {
+          slowestVoter = { name: ps.name, emoji: ps.emoji, avgMs: ps.avgVoteTimeMs }
+        }
+      }
+
+      // Consensus
+      if (ps.consensusRate !== null) {
+        if (!mostConsensus || ps.consensusRate > mostConsensus.rate) {
+          mostConsensus = { name: ps.name, emoji: ps.emoji, rate: ps.consensusRate }
+        }
+        if (!leastConsensus || ps.consensusRate < leastConsensus.rate) {
+          leastConsensus = { name: ps.name, emoji: ps.emoji, rate: ps.consensusRate }
+        }
+      }
+
+      // Chaos agent
+      if (ps.chaosVotes > 0) {
+        if (!chaosAgent || ps.chaosVotes > chaosAgent.count) {
+          chaosAgent = { name: ps.name, emoji: ps.emoji, count: ps.chaosVotes }
+        }
+      }
+
+      // Highest/lowest average
+      if (ps.avgVote !== null) {
+        if (!highestAvg || ps.avgVote > highestAvg.avg) {
+          highestAvg = { name: ps.name, emoji: ps.emoji, avg: ps.avgVote }
+        }
+        if (!lowestAvg || ps.avgVote < lowestAvg.avg) {
+          lowestAvg = { name: ps.name, emoji: ps.emoji, avg: ps.avgVote }
+        }
+      }
+    }
+
+    return {
+      sessionDurationMins,
+      totalRounds: state.revealed ? state.roundNumber : state.roundNumber - 1,
+      yahtzeeCount: state.stats.yahtzeeCount,
+      fastestVoter,
+      slowestVoter,
+      mostConsensus,
+      leastConsensus,
+      chaosAgent,
+      highestAvg,
+      lowestAvg,
+      participantStats,
     }
   }
 
@@ -747,7 +983,14 @@ export class RoomDO extends DurableObject {
       if (activeParticipants.length >= 2) {
         const votes = activeParticipants.map(p => p.vote)
         const allSame = votes.every(v => v === votes[0])
+
+        // Update consensus stats
+        this.updateConsensusStats(state, activeParticipants)
+
         if (allSame && votes[0] !== null) {
+          // Track Yahtzee count
+          state.stats.yahtzeeCount++
+
           const consensusMessage: ChatMessage = {
             id: crypto.randomUUID(),
             participantId: 'system',

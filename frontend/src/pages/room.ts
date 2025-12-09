@@ -30,6 +30,19 @@ interface ChatMessage {
   timestamp: number
 }
 
+interface SessionStats {
+  sessionDurationMins: number
+  totalRounds: number
+  yahtzeeCount: number
+  fastestVoter: { name: string; emoji: string; avgMs: number } | null
+  slowestVoter: { name: string; emoji: string; avgMs: number } | null
+  mostConsensus: { name: string; emoji: string; rate: number } | null
+  leastConsensus: { name: string; emoji: string; rate: number } | null
+  chaosAgent: { name: string; emoji: string; count: number } | null
+  highestAvg: { name: string; emoji: string; avg: number } | null
+  lowestAvg: { name: string; emoji: string; avg: number } | null
+}
+
 interface RoomState {
   participantId: string | null
   emoji: string | null
@@ -354,6 +367,11 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
     document.querySelector('#blackjack-btn')?.addEventListener('click', () => navigate('/'))
   })
 
+  connection.on('stats', (data) => {
+    const stats = data.stats as SessionStats
+    showStatsPanel(stats)
+  })
+
   try {
     await connection.connect()
     const existingIdentity = getRoomIdentity(roomId)
@@ -548,6 +566,15 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
                   🔥
                 </button>
               ` : ''}
+              <button
+                id="stats-btn"
+                class="text-gray-400 hover:text-white p-2"
+                title="Session Stats"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              </button>
               <a
                 href="https://github.com/StirlingMarketingGroup/fibonacci-mcfibface"
                 target="_blank"
@@ -698,6 +725,10 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
     if (confirm('Are you sure you want to permanently delete this room? This cannot be undone.')) {
       connection?.send({ type: 'burn' })
     }
+  })
+
+  document.querySelector('#stats-btn')?.addEventListener('click', () => {
+    connection?.send({ type: 'get_stats' })
   })
 
   document.querySelector('#blackjack-btn')?.addEventListener('click', () => {
@@ -890,4 +921,162 @@ function renderStats(): string {
       ` : ''}
     </div>
   `
+}
+
+function formatTime(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  const seconds = ms / 1000
+  if (seconds < 60) return `${seconds.toFixed(1)}s`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = Math.round(seconds % 60)
+  return `${minutes}m ${remainingSeconds}s`
+}
+
+function showStatsPanel(stats: SessionStats) {
+  // Remove existing panel if present
+  const existing = document.querySelector('#stats-panel')
+  if (existing) existing.remove()
+
+  // Build awards list
+  const awards: string[] = []
+
+  if (stats.fastestVoter) {
+    awards.push(`
+      <div class="flex items-center gap-2 p-3 bg-gray-800 rounded-lg">
+        <span class="text-2xl">⚡</span>
+        <div>
+          <div class="font-bold text-yellow-400">Speed Demon</div>
+          <div class="text-sm text-gray-300">${stats.fastestVoter.emoji} ${stats.fastestVoter.name} - avg ${formatTime(stats.fastestVoter.avgMs)}</div>
+        </div>
+      </div>
+    `)
+  }
+
+  if (stats.slowestVoter && stats.slowestVoter.name !== stats.fastestVoter?.name) {
+    awards.push(`
+      <div class="flex items-center gap-2 p-3 bg-gray-800 rounded-lg">
+        <span class="text-2xl">🐢</span>
+        <div>
+          <div class="font-bold text-blue-400">Deep Thinker</div>
+          <div class="text-sm text-gray-300">${stats.slowestVoter.emoji} ${stats.slowestVoter.name} - avg ${formatTime(stats.slowestVoter.avgMs)}</div>
+        </div>
+      </div>
+    `)
+  }
+
+  if (stats.mostConsensus && stats.mostConsensus.rate > 0) {
+    awards.push(`
+      <div class="flex items-center gap-2 p-3 bg-gray-800 rounded-lg">
+        <span class="text-2xl">🤝</span>
+        <div>
+          <div class="font-bold text-green-400">Team Player</div>
+          <div class="text-sm text-gray-300">${stats.mostConsensus.emoji} ${stats.mostConsensus.name} - ${Math.round(stats.mostConsensus.rate * 100)}% consensus</div>
+        </div>
+      </div>
+    `)
+  }
+
+  if (stats.leastConsensus && stats.leastConsensus.name !== stats.mostConsensus?.name && stats.leastConsensus.rate < 1) {
+    awards.push(`
+      <div class="flex items-center gap-2 p-3 bg-gray-800 rounded-lg">
+        <span class="text-2xl">🎭</span>
+        <div>
+          <div class="font-bold text-purple-400">Rebel</div>
+          <div class="text-sm text-gray-300">${stats.leastConsensus.emoji} ${stats.leastConsensus.name} - ${Math.round(stats.leastConsensus.rate * 100)}% consensus</div>
+        </div>
+      </div>
+    `)
+  }
+
+  if (stats.chaosAgent && stats.chaosAgent.count > 0) {
+    awards.push(`
+      <div class="flex items-center gap-2 p-3 bg-gray-800 rounded-lg">
+        <span class="text-2xl">🦆</span>
+        <div>
+          <div class="font-bold text-orange-400">Chaos Agent</div>
+          <div class="text-sm text-gray-300">${stats.chaosAgent.emoji} ${stats.chaosAgent.name} - ${stats.chaosAgent.count} chaos vote${stats.chaosAgent.count > 1 ? 's' : ''}</div>
+        </div>
+      </div>
+    `)
+  }
+
+  if (stats.highestAvg) {
+    awards.push(`
+      <div class="flex items-center gap-2 p-3 bg-gray-800 rounded-lg">
+        <span class="text-2xl">📈</span>
+        <div>
+          <div class="font-bold text-red-400">Go Big or Go Home</div>
+          <div class="text-sm text-gray-300">${stats.highestAvg.emoji} ${stats.highestAvg.name} - avg ${stats.highestAvg.avg.toFixed(1)} points</div>
+        </div>
+      </div>
+    `)
+  }
+
+  if (stats.lowestAvg && stats.lowestAvg.name !== stats.highestAvg?.name) {
+    awards.push(`
+      <div class="flex items-center gap-2 p-3 bg-gray-800 rounded-lg">
+        <span class="text-2xl">🎯</span>
+        <div>
+          <div class="font-bold text-cyan-400">Minimalist</div>
+          <div class="text-sm text-gray-300">${stats.lowestAvg.emoji} ${stats.lowestAvg.name} - avg ${stats.lowestAvg.avg.toFixed(1)} points</div>
+        </div>
+      </div>
+    `)
+  }
+
+  const panel = document.createElement('div')
+  panel.id = 'stats-panel'
+  panel.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50'
+  panel.innerHTML = `
+    <div class="bg-gray-900 rounded-xl p-6 max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-2xl font-bold">📊 Session Stats</h2>
+        <button id="close-stats-btn" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+      </div>
+
+      <!-- Overview -->
+      <div class="grid grid-cols-3 gap-4 mb-6">
+        <div class="text-center p-3 bg-gray-800 rounded-lg">
+          <div class="text-2xl font-bold text-indigo-400">${stats.totalRounds}</div>
+          <div class="text-xs text-gray-400">Rounds</div>
+        </div>
+        <div class="text-center p-3 bg-gray-800 rounded-lg">
+          <div class="text-2xl font-bold text-green-400">${stats.yahtzeeCount}</div>
+          <div class="text-xs text-gray-400">Yahtzees</div>
+        </div>
+        <div class="text-center p-3 bg-gray-800 rounded-lg">
+          <div class="text-2xl font-bold text-yellow-400">${stats.sessionDurationMins}m</div>
+          <div class="text-xs text-gray-400">Duration</div>
+        </div>
+      </div>
+
+      ${awards.length > 0 ? `
+        <!-- Awards -->
+        <h3 class="text-lg font-bold mb-3">🏆 Awards</h3>
+        <div class="space-y-2">
+          ${awards.join('')}
+        </div>
+      ` : `
+        <div class="text-center text-gray-500 py-8">
+          <div class="text-4xl mb-2">🗳️</div>
+          <p>Complete a few rounds to see awards!</p>
+        </div>
+      `}
+    </div>
+  `
+
+  document.body.appendChild(panel)
+
+  // Close handlers
+  const closeBtn = document.querySelector('#close-stats-btn')
+  closeBtn?.addEventListener('click', () => panel.remove())
+  panel.addEventListener('click', (e) => {
+    if (e.target === panel) panel.remove()
+  })
+  document.addEventListener('keydown', function escHandler(e) {
+    if (e.key === 'Escape') {
+      panel.remove()
+      document.removeEventListener('keydown', escHandler)
+    }
+  })
 }
