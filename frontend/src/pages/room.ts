@@ -188,6 +188,15 @@ function renderNamePrompt(app: HTMLDivElement, roomId: string) {
     joinBtn.disabled = !nameInput.value.trim()
   })
 
+  nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const name = nameInput.value.trim()
+      if (!name) return
+      setName(name)
+      connectToRoom(app, roomId, name)
+    }
+  })
+
   joinBtn.addEventListener('click', () => {
     const name = nameInput.value.trim()
     if (!name) return
