@@ -420,13 +420,34 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
           `).join('')}
         </div>
         <div class="p-3 border-t border-gray-700">
-          <input
-            type="text"
-            id="chat-input"
-            placeholder="Send a message"
-            maxlength="500"
-            class="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
-          />
+          <div class="flex gap-2 items-center">
+            <input
+              type="text"
+              id="chat-input"
+              placeholder="Send a message"
+              maxlength="500"
+              class="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+            />
+            <div class="relative group">
+              <button type="button" class="w-6 h-6 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-white text-xs font-bold flex items-center justify-center">?</button>
+              <div class="absolute bottom-8 right-0 w-64 p-3 bg-gray-800 border border-gray-600 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                <div class="text-xs text-gray-300 space-y-2">
+                  <div class="font-bold text-white mb-2">Chat Formatting</div>
+                  <div><span class="text-gray-400">**bold**</span> → <strong>bold</strong></div>
+                  <div><span class="text-gray-400">*italic*</span> → <em>italic</em></div>
+                  <div><span class="text-gray-400">\`code\`</span> → <code class="bg-gray-700 px-1 rounded">code</code></div>
+                  <div><span class="text-gray-400">~~strike~~</span> → <del>strike</del></div>
+                  <div class="font-bold text-white mt-3 mb-2">Text Effects</div>
+                  <div><span class="text-gray-400">!rainbow text!</span> → <span class="effect-rainbow">rainbow</span></div>
+                  <div><span class="text-gray-400">!shake text!</span> → <span class="effect-shake">shake</span></div>
+                  <div><span class="text-gray-400">!glow text!</span> → <span class="effect-glow">glow</span></div>
+                  <div><span class="text-gray-400">!party text!</span> → <span class="effect-party">party</span></div>
+                  <div class="font-bold text-white mt-3 mb-2">Stickers</div>
+                  <div class="text-gray-400">Paste any .gif URL</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -435,12 +456,18 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
   // Scroll chat to bottom
   const chatMessages = document.querySelector('#chat-messages')
   if (chatMessages) {
-    chatMessages.scrollTop = chatMessages.scrollHeight
-
-    // Keep scrolled to bottom when images load (they change container height)
-    const resizeObserver = new ResizeObserver(() => {
+    const scrollToBottom = () => {
       chatMessages.scrollTop = chatMessages.scrollHeight
+    }
+    scrollToBottom()
+
+    // Scroll to bottom when any image loads (they change container height)
+    chatMessages.querySelectorAll('img').forEach((img) => {
+      img.addEventListener('load', scrollToBottom)
     })
+
+    // Also use ResizeObserver for dynamically added images
+    const resizeObserver = new ResizeObserver(scrollToBottom)
     resizeObserver.observe(chatMessages)
   }
 
