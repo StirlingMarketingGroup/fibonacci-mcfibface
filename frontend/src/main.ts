@@ -1,6 +1,7 @@
 import './style.css'
 import { renderHomePage } from './pages/home'
 import { renderRoomPage } from './pages/room'
+import { startVersionCheck } from './lib/version'
 
 function router() {
   const path = window.location.pathname
@@ -21,3 +22,6 @@ window.addEventListener('popstate', router)
 
 // Initial render
 router()
+
+// Start checking for updates
+startVersionCheck()

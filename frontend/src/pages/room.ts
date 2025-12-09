@@ -1,6 +1,7 @@
 import { getName, setName, getRoomIdentity, setRoomIdentity } from '../lib/storage'
 import { RoomConnection } from '../lib/websocket'
 import { navigate } from '../lib/router'
+import { checkForUpdate } from '../lib/version'
 import confetti from 'canvas-confetti'
 import { marked } from 'marked'
 
@@ -290,6 +291,8 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
 
   connection.on('connected', () => {
     showConnectionStatus('connected')
+    // Check for updates on reconnection
+    checkForUpdate()
   })
 
   connection.on('kicked', () => {
