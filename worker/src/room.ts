@@ -167,12 +167,27 @@ export class RoomDO extends DurableObject {
         // Check if this is a reconnecting participant
         let participant: Participant
         let participantId: string
+        let isReconnection = false
 
         if (requestedId && state.participants[requestedId]) {
-          // Reconnecting - update their session
+          // Reconnecting - participant still in state (e.g. brief network blip)
           participantId = requestedId
           participant = state.participants[requestedId]
           participant.name = data.name as string // Allow name updates
+          isReconnection = true
+        } else if (requestedId && requestedEmoji && requestedColor) {
+          // Rejoining with stored identity (e.g. after worker restart or page refresh)
+          // Treat as new join so others see them
+          participantId = requestedId
+          participant = {
+            id: participantId,
+            name: data.name as string,
+            emoji: requestedEmoji,
+            color: requestedColor,
+            vote: null,
+          }
+          state.participants[participantId] = participant
+          // Not a reconnection - broadcast to others
         } else {
           // New participant
           participantId = crypto.randomUUID()
@@ -189,8 +204,6 @@ export class RoomDO extends DurableObject {
 
           state.participants[participantId] = participant
         }
-
-        const isReconnection = requestedId && requestedId === participantId
 
         this.setParticipantId(ws, participantId)
 
