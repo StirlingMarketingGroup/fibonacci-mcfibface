@@ -5,8 +5,8 @@ const API_HOST = import.meta.env.PROD
   : window.location.host
 
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000] // Exponential backoff
-const PING_INTERVAL = 30000 // 30 seconds
-const PONG_TIMEOUT = 10000 // 10 seconds to receive pong
+const PING_INTERVAL = 15000 // 15 seconds (more aggressive to catch dead connections faster)
+const PONG_TIMEOUT = 5000 // 5 seconds to receive pong
 
 export class RoomConnection {
   private ws: WebSocket | null = null
@@ -29,14 +29,18 @@ export class RoomConnection {
 
   private startHeartbeat() {
     this.stopHeartbeat()
+    console.log('[WS] Starting heartbeat')
     this.pingTimer = window.setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
+        console.log('[WS] Sending ping')
         this.ws.send(JSON.stringify({ type: 'ping' }))
         // Set timeout for pong response
         this.pongTimer = window.setTimeout(() => {
-          console.log('Pong timeout - connection dead, reconnecting')
+          console.log('[WS] Pong timeout - connection dead, reconnecting')
           this.ws?.close()
         }, PONG_TIMEOUT)
+      } else {
+        console.log('[WS] Ping skipped - readyState:', this.ws?.readyState)
       }
     }, PING_INTERVAL)
   }
@@ -54,6 +58,7 @@ export class RoomConnection {
 
   private setupWebSocket(ws: WebSocket, onFirstConnect?: () => void) {
     ws.onopen = () => {
+      console.log('[WS] Connection opened')
       this.reconnectAttempt = 0
       // Re-send join message on reconnect
       if (this.joinData) {
@@ -75,6 +80,7 @@ export class RoomConnection {
 
         // Handle pong response
         if (data.type === 'pong') {
+          console.log('[WS] Received pong')
           if (this.pongTimer) {
             clearTimeout(this.pongTimer)
             this.pongTimer = null
@@ -89,7 +95,8 @@ export class RoomConnection {
       }
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      console.log('[WS] Connection closed', event.code, event.reason)
       this.stopHeartbeat()
       if (!this.manualDisconnect) {
         this.scheduleReconnect()
