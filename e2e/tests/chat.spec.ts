@@ -539,4 +539,24 @@ test.describe('Chat', () => {
     expect(colors[0]).toBe(colors[1])
     expect(colors[1]).toBe(colors[2])
   })
+
+  test('chat messages show user animal emoji', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Bob sends a message (not host, so has animal emoji on card)
+    await bob.sendChat('Hello!')
+
+    // Get Bob's emoji from his participant card (on alice's view)
+    const bobCard = alice.page.locator('.flex.flex-col.items-center', { hasText: 'Bob' })
+    const bobEmoji = await bobCard.locator('.text-lg').first().textContent()
+
+    // Verify the emoji appears in the chat message (before the name)
+    const chatMessage = alice.page.locator('#chat-messages .text-sm', { hasText: 'Hello!' })
+    const messageHtml = await chatMessage.innerHTML()
+    expect(messageHtml).toContain(bobEmoji)
+  })
 })
