@@ -1,14 +1,14 @@
-# HTML files should not be cached
+# HTML files should never be cached - always fetch fresh
 /*.html
-  Cache-Control: no-cache
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
 
 /
-  Cache-Control: no-cache
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
 
-# SPA routes
+# SPA routes - always fetch fresh HTML
 /room/*
-  Cache-Control: no-cache
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
 
-# Assets are fingerprinted, cache forever
+# Assets are fingerprinted with content hashes, cache forever
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
