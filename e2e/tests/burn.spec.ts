@@ -65,9 +65,11 @@ test.describe('Burn Room', () => {
     await charlie.goto(roomUrl)
     await charlie.joinRoom()
 
-    // Charlie should be in a fresh room with no chat history
-    const chatMessages = charlie.page.locator('#chat-messages .text-sm')
-    await expect(chatMessages).toHaveCount(0)
+    // Charlie should be in a fresh room with no chat history from before
+    // (only system messages for Charlie's join should be present)
+    const chatMessages = charlie.page.locator('#chat-messages')
+    await expect(chatMessages.locator('text=Hello before burn')).not.toBeVisible()
+    await expect(chatMessages.locator('text=Goodbye')).not.toBeVisible()
 
     // Charlie should be alone (and the host of this new room)
     await charlie.expectParticipantCount(1)

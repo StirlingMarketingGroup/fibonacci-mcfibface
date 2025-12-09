@@ -55,6 +55,48 @@ const CHAT_COLORS = [
   '#00FF7F', // SpringGreen
 ]
 
+// Funny join messages - {name} will be replaced with the user's name
+const JOIN_MESSAGES = [
+  '**{name}** has entered the arena',
+  '**{name}** just slid into the room',
+  '**{name}** appeared out of nowhere',
+  'A wild **{name}** appeared!',
+  '**{name}** has joined the party 🎉',
+  '**{name}** is here to estimate things',
+  'Everyone welcome **{name}**!',
+  '**{name}** just spawned',
+  '**{name}** has arrived fashionably late',
+  '**{name}** rolled in like a tumbleweed',
+  'It\'s dangerous to estimate alone! **{name}** joined',
+  '**{name}** materialized from the void',
+  '**{name}** teleported in',
+  'The legend **{name}** has arrived',
+  '**{name}** snuck in through the back door',
+]
+
+// Funny leave messages - {name} will be replaced with the user's name
+const LEAVE_MESSAGES = [
+  '**{name}** has left the building',
+  '**{name}** vanished into thin air',
+  '**{name}** yeeted themselves out',
+  '**{name}** said "peace out" ✌️',
+  '**{name}** has disconnected from the matrix',
+  '**{name}** went to get coffee ☕',
+  '**{name}** rage quit (probably)',
+  '**{name}** was called to a meeting',
+  '**{name}** found a better room (just kidding)',
+  '**{name}** disappeared in a puff of smoke 💨',
+  '**{name}** has fled the scene',
+  '**{name}** noped out of here',
+  '**{name}** took their ball and went home',
+  '**{name}** exited stage left',
+  '**{name}** is outta here!',
+]
+
+function randomFrom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)]
+}
+
 interface WebSocketAttachment {
   participantId: string
 }
@@ -260,6 +302,24 @@ export class RoomDO extends DurableObject {
               vote: state.revealed ? participant.vote : (participant.vote ? 'hidden' : null),
             },
           }, ws)
+
+          // Add funny join system message
+          const joinMessage: ChatMessage = {
+            id: crypto.randomUUID(),
+            participantId: 'system',
+            name: 'System',
+            emoji: '👋',
+            color: '#22C55E', // Green
+            text: randomFrom(JOIN_MESSAGES).replace('{name}', participant.name),
+            timestamp: Date.now(),
+          }
+          state.chat.push(joinMessage)
+          if (state.chat.length > 100) {
+            state.chat = state.chat.slice(-100)
+          }
+          await this.saveState()
+
+          this.broadcast({ type: 'chat', message: joinMessage })
         }
         break
       }
@@ -404,15 +464,33 @@ export class RoomDO extends DurableObject {
         const participant = state.participants[participantId]
         if (!participant) return
 
+        const participantName = participant.name
+
         // Mark participant as left (don't delete - they can rejoin with same identity)
         participant.left = true
         participant.vote = null
         delete state.votes[participantId]
 
+        // Add funny leave system message
+        const leaveMessage: ChatMessage = {
+          id: crypto.randomUUID(),
+          participantId: 'system',
+          name: 'System',
+          emoji: '👋',
+          color: '#EAB308', // Yellow
+          text: randomFrom(LEAVE_MESSAGES).replace('{name}', participantName),
+          timestamp: Date.now(),
+        }
+        state.chat.push(leaveMessage)
+        if (state.chat.length > 100) {
+          state.chat = state.chat.slice(-100)
+        }
+
         await this.saveState()
 
         // Notify others
         this.broadcast({ type: 'participant_left', participantId })
+        this.broadcast({ type: 'chat', message: leaveMessage })
 
         // Close the connection
         try {

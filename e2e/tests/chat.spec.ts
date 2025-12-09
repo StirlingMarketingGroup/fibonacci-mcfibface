@@ -98,16 +98,19 @@ test.describe('Chat', () => {
     await bob.goto(roomUrl)
     await bob.joinRoom()
 
+    // Count existing messages (system join messages)
+    const chatMessages = alice.page.locator('#chat-messages')
+    const initialCount = await chatMessages.locator('div.text-sm').count()
+
     // Try to send empty message
     await alice.page.press('#chat-input', 'Enter')
 
     // Wait a bit to ensure no message appears
     await alice.page.waitForTimeout(200)
 
-    // Chat should be empty (no messages)
-    const chatMessages = alice.page.locator('#chat-messages')
-    const messageCount = await chatMessages.locator('div.text-sm').count()
-    expect(messageCount).toBe(0)
+    // Message count should be unchanged (only system messages)
+    const finalCount = await chatMessages.locator('div.text-sm').count()
+    expect(finalCount).toBe(initialCount)
   })
 
   test('whitespace-only message is not sent', async ({ createUsers }) => {
@@ -117,15 +120,19 @@ test.describe('Chat', () => {
     await bob.goto(roomUrl)
     await bob.joinRoom()
 
+    // Count existing messages (system join messages)
+    const chatMessages = alice.page.locator('#chat-messages')
+    const initialCount = await chatMessages.locator('div.text-sm').count()
+
     // Try to send whitespace message
     await alice.page.fill('#chat-input', '   ')
     await alice.page.press('#chat-input', 'Enter')
 
     await alice.page.waitForTimeout(200)
 
-    const chatMessages = alice.page.locator('#chat-messages')
-    const messageCount = await chatMessages.locator('div.text-sm').count()
-    expect(messageCount).toBe(0)
+    // Message count should be unchanged (only system messages)
+    const finalCount = await chatMessages.locator('div.text-sm').count()
+    expect(finalCount).toBe(initialCount)
   })
 
   test('long message is accepted up to 500 chars', async ({ createUsers }) => {
@@ -368,17 +375,22 @@ test.describe('Chat', () => {
     await alice.sendChat('Third message')
     await bob.sendChat('Fourth message')
 
-    // Verify order in the chat panel
+    // Verify order in the chat panel - check that user messages appear in correct order
+    // (there may be system join messages before these)
     const chatMessages = alice.page.locator('#chat-messages .text-sm')
-    const count = await chatMessages.count()
-    expect(count).toBe(4)
-
-    // Check order by examining text content
     const texts = await chatMessages.allTextContents()
-    expect(texts[0]).toContain('First message')
-    expect(texts[1]).toContain('Second message')
-    expect(texts[2]).toContain('Third message')
-    expect(texts[3]).toContain('Fourth message')
+
+    // Find indices of our messages
+    const firstIdx = texts.findIndex(t => t.includes('First message'))
+    const secondIdx = texts.findIndex(t => t.includes('Second message'))
+    const thirdIdx = texts.findIndex(t => t.includes('Third message'))
+    const fourthIdx = texts.findIndex(t => t.includes('Fourth message'))
+
+    // All should be found and in order
+    expect(firstIdx).toBeGreaterThan(-1)
+    expect(secondIdx).toBeGreaterThan(firstIdx)
+    expect(thirdIdx).toBeGreaterThan(secondIdx)
+    expect(fourthIdx).toBeGreaterThan(thirdIdx)
   })
 
   test('late joiner sees last 50 messages', async ({ createUsers }) => {

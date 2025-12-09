@@ -108,8 +108,11 @@ test.describe('Kick', () => {
     // Alice kicks Bob
     await alice.kickParticipant('Bob')
 
-    // Alice and Charlie should see system message
-    await alice.expectChatMessage('System', 'Bob')
-    await charlie.expectChatMessage('System', 'Bob')
+    // Alice and Charlie should see system message about the kick
+    const chatArea = alice.page.locator('#chat-messages')
+    await expect(chatArea.locator('text=was kicked from the room')).toBeVisible()
+
+    const charlieChat = charlie.page.locator('#chat-messages')
+    await expect(charlieChat.locator('text=was kicked from the room')).toBeVisible()
   })
 })

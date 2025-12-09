@@ -164,4 +164,42 @@ test.describe('Join and Leave Room', () => {
     const rejoinedEmoji = await bobCard.locator('.text-lg').textContent()
     expect(rejoinedEmoji).toBe(initialEmoji)
   })
+
+  test('system message appears when user joins', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Alice should see a system message about Bob joining
+    const chatArea = alice.page.locator('#chat-messages')
+    await expect(chatArea.locator('text=Bob')).toBeVisible()
+    // The message should contain Bob's name in bold (from the markdown)
+    await expect(chatArea.locator('strong', { hasText: 'Bob' })).toBeVisible()
+  })
+
+  test('system message appears when user leaves', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    await alice.expectParticipantCount(2)
+
+    // Bob leaves
+    await bob.leaveRoom()
+    await alice.page.waitForTimeout(300)
+
+    // Alice should see a system message about Bob leaving
+    const chatArea = alice.page.locator('#chat-messages')
+    // The message should contain Bob's name in bold
+    // There will be both join and leave messages, we check for the presence of the name
+    const strongBobs = chatArea.locator('strong', { hasText: 'Bob' })
+    // Should have at least 2 (one for join, one for leave)
+    await expect(strongBobs).toHaveCount(2)
+  })
 })
