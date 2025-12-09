@@ -224,18 +224,12 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
     appendChatMessage(message)
   })
 
-  connection.on('disconnected', () => {
-    app.innerHTML = `
-      <div class="flex flex-col items-center justify-center min-h-screen p-8">
-        <p class="text-red-400 mb-4">Disconnected from room</p>
-        <button
-          onclick="location.reload()"
-          class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg"
-        >
-          Reconnect
-        </button>
-      </div>
-    `
+  connection.on('reconnecting', () => {
+    showConnectionStatus('reconnecting')
+  })
+
+  connection.on('connected', () => {
+    showConnectionStatus('connected')
   })
 
   try {
@@ -284,6 +278,36 @@ function escapeHtml(text: string): string {
 function renderMarkdown(text: string): string {
   // Use marked for inline markdown (bold, italic, code, links, strikethrough)
   return marked.parseInline(text) as string
+}
+
+function showConnectionStatus(status: 'connected' | 'reconnecting') {
+  let indicator = document.querySelector('#connection-status')
+
+  if (status === 'connected') {
+    // Hide and remove after fade
+    if (indicator) {
+      indicator.classList.add('opacity-0')
+      setTimeout(() => indicator?.remove(), 300)
+    }
+    return
+  }
+
+  // Show reconnecting indicator
+  if (!indicator) {
+    indicator = document.createElement('div')
+    indicator.id = 'connection-status'
+    indicator.className = 'fixed top-4 left-1/2 -translate-x-1/2 bg-yellow-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-opacity duration-300 z-50'
+    document.body.appendChild(indicator)
+  }
+
+  indicator.innerHTML = `
+    <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
+    <span>Reconnecting...</span>
+  `
+  indicator.classList.remove('opacity-0')
 }
 
 function renderRoom(app: HTMLDivElement, roomId: string) {
