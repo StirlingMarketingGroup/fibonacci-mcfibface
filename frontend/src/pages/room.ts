@@ -232,6 +232,22 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
     showConnectionStatus('connected')
   })
 
+  connection.on('kicked', () => {
+    connection?.disconnect()
+    app.innerHTML = `
+      <div class="flex flex-col items-center justify-center min-h-screen p-8">
+        <p class="text-red-400 text-xl mb-4">You were kicked from the room</p>
+        <button
+          id="back-home-btn"
+          class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg"
+        >
+          Back to Home
+        </button>
+      </div>
+    `
+    document.querySelector('#back-home-btn')?.addEventListener('click', () => navigate('/'))
+  })
+
   try {
     await connection.connect()
     const existingIdentity = getRoomIdentity(roomId)
@@ -347,7 +363,7 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
         <!-- Participants -->
         <main class="flex-1 p-8 overflow-auto">
           <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            ${state.participants.map((p) => renderParticipantCard(p)).join('')}
+            ${state.participants.map((p) => renderParticipantCard(p, isHost)).join('')}
           </div>
 
           ${state.revealed ? renderStats() : ''}
@@ -434,6 +450,16 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
     })
   })
 
+  // Kick button handlers (host only)
+  document.querySelectorAll('.kick-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const participantId = btn.getAttribute('data-kick')
+      if (participantId) {
+        connection?.send({ type: 'kick', participantId })
+      }
+    })
+  })
+
   // Chat input
   const chatInput = document.querySelector<HTMLInputElement>('#chat-input')
   chatInput?.addEventListener('keydown', (e) => {
@@ -449,10 +475,11 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
   })
 }
 
-function renderParticipantCard(participant: Participant): string {
+function renderParticipantCard(participant: Participant, isHost: boolean): string {
   const isMe = participant.id === state.participantId
   const hasVoted = participant.vote !== null
   const showVote = state.revealed && participant.vote
+  const canKick = isHost && !isMe
 
   let cardContent: string
   if (showVote) {
@@ -464,7 +491,14 @@ function renderParticipantCard(participant: Participant): string {
   }
 
   return `
-    <div class="flex flex-col items-center">
+    <div class="flex flex-col items-center relative group">
+      ${canKick ? `
+        <button
+          data-kick="${participant.id}"
+          class="kick-btn absolute -top-2 -right-2 w-6 h-6 bg-red-600 hover:bg-red-500 rounded-full text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          title="Kick ${participant.name}"
+        >✕</button>
+      ` : ''}
       <div class="w-20 h-28 rounded-lg flex items-center justify-center ${
         showVote
           ? 'bg-indigo-600'

@@ -30,6 +30,26 @@ npx wrangler dev      # Local development
 npx wrangler deploy   # Deploy to Cloudflare
 ```
 
+### E2E Tests (`cd e2e/`)
+```bash
+npm test              # Run all Playwright tests
+npm test -- --grep "pattern"  # Run tests matching pattern
+```
+
+## Development Guidelines
+
+**Every new feature must have E2E tests.** Tests live in `e2e/tests/` and use the multi-user fixture from `e2e/fixtures/multi-user.ts`. The fixture provides helpers for common actions:
+
+- `createUsers(n)` - Create n test users with separate browser contexts
+- `user.createRoom()` - Create a room and return the URL
+- `user.joinRoom()` - Join a room
+- `user.vote(value)` - Cast a vote
+- `user.kickParticipant(name)` - Kick a user (host only)
+- `user.expectParticipantCount(n)` - Assert participant count
+- etc.
+
+Run tests before committing: `cd e2e && npm test`
+
 ## Point Scale
 
 Valid point values: `.5, 1, 2, 3, 5, 8, 13, 20, 40, 100, ?, ☕, 🦆`

@@ -18,6 +18,7 @@ export interface TestUser {
 
   // Host actions
   resetRound(): Promise<void>
+  kickParticipant(name: string): Promise<void>
 
   // Chat
   sendChat(text: string): Promise<void>
@@ -41,6 +42,9 @@ export interface TestUser {
   // Connection
   disconnect(): Promise<void>
   reconnect(): Promise<void>
+
+  // Kicked state
+  expectKicked(): Promise<void>
 }
 
 class TestUserImpl implements TestUser {
@@ -95,6 +99,13 @@ class TestUserImpl implements TestUser {
 
   async resetRound() {
     await this.page.click('#reset-btn')
+    await this.page.waitForTimeout(100)
+  }
+
+  async kickParticipant(name: string) {
+    const card = this.page.locator('.flex.flex-col.items-center.relative.group', { hasText: name })
+    await card.hover()
+    await card.locator('.kick-btn').click()
     await this.page.waitForTimeout(100)
   }
 
@@ -186,6 +197,10 @@ class TestUserImpl implements TestUser {
     await newPage.goto(this.currentUrl)
     this.page = newPage
     await this.page.waitForSelector('.vote-btn', { timeout: 10000 })
+  }
+
+  async expectKicked() {
+    await expect(this.page.locator('text=You were kicked from the room')).toBeVisible({ timeout: 5000 })
   }
 }
 

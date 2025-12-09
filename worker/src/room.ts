@@ -298,6 +298,38 @@ export class RoomDO extends DurableObject {
         this.broadcast({ type: 'chat', message: chatMessage })
         break
       }
+
+      case 'kick': {
+        const requesterId = this.sessions.get(ws)
+        if (requesterId !== state.hostId) return // Only host can kick
+
+        const targetId = data.participantId as string
+        if (!targetId || targetId === requesterId) return // Can't kick yourself
+
+        const targetParticipant = state.participants[targetId]
+        if (!targetParticipant) return
+
+        // Find the target's WebSocket and close it
+        for (const [targetWs, participantId] of this.sessions.entries()) {
+          if (participantId === targetId) {
+            // Send kicked message to the target before closing
+            try {
+              targetWs.send(JSON.stringify({ type: 'kicked' }))
+              targetWs.close(1000, 'Kicked by host')
+            } catch {
+              // Socket might already be closed
+            }
+            break
+          }
+        }
+
+        // Remove from state (webSocketClose will handle the rest)
+        delete state.participants[targetId]
+        await this.saveState()
+
+        this.broadcast({ type: 'participant_left', participantId: targetId })
+        break
+      }
     }
   }
 
