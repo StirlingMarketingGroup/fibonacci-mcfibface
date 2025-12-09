@@ -310,7 +310,16 @@ function appendChatMessage(message: ChatMessage) {
 
   const div = document.createElement('div')
   div.className = 'text-sm py-1'
-  div.innerHTML = `<span class="mr-1">${message.emoji || ''}</span><span style="color: ${message.color}" class="font-bold">${escapeHtml(message.name)}</span><span class="text-gray-300">: ${renderMarkdown(message.text)}</span>`
+
+  if (message.participantId === 'system') {
+    // System messages: muted gray text, centered, italic
+    div.className = 'text-sm py-1 text-center'
+    div.innerHTML = `<span class="text-gray-500 italic">${renderMarkdown(message.text)}</span>`
+  } else {
+    // Regular user messages
+    div.innerHTML = `<span class="mr-1">${message.emoji || ''}</span><span style="color: ${message.color}" class="font-bold">${escapeHtml(message.name)}</span><span class="text-gray-300">: ${renderMarkdown(message.text)}</span>`
+  }
+
   chatMessages.appendChild(div)
   chatMessages.scrollTop = chatMessages.scrollHeight
 }
@@ -479,11 +488,10 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
       <div class="w-80 bg-gray-800 border-l border-gray-700 flex flex-col">
         <div class="p-3 border-b border-gray-700 font-bold">Chat</div>
         <div id="chat-messages" class="flex-1 p-3 overflow-y-auto space-y-1">
-          ${state.chat.map((m) => `
-            <div class="text-sm py-1">
-              <span class="mr-1">${m.emoji || ''}</span><span style="color: ${m.color}" class="font-bold">${escapeHtml(m.name)}</span><span class="text-gray-300">: ${renderMarkdown(m.text)}</span>
-            </div>
-          `).join('')}
+          ${state.chat.map((m) => m.participantId === 'system'
+            ? `<div class="text-sm py-1 text-center"><span class="text-gray-500 italic">${renderMarkdown(m.text)}</span></div>`
+            : `<div class="text-sm py-1"><span class="mr-1">${m.emoji || ''}</span><span style="color: ${m.color}" class="font-bold">${escapeHtml(m.name)}</span><span class="text-gray-300">: ${renderMarkdown(m.text)}</span></div>`
+          ).join('')}
         </div>
         <div class="p-3 border-t border-gray-700">
           <div class="flex gap-2 items-start">
@@ -561,6 +569,7 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
 
   document.querySelector('#blackjack-btn')?.addEventListener('click', () => {
     connection?.send({ type: 'leave' })
+    connection?.disconnect() // Prevent reconnection when server closes the socket
     navigate('/')
   })
 

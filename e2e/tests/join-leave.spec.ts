@@ -202,4 +202,19 @@ test.describe('Join and Leave Room', () => {
     // Should have at least 2 (one for join, one for leave)
     await expect(strongBobs).toHaveCount(2)
   })
+
+  test('leave button navigates to home page', async ({ createUsers }) => {
+    const [alice] = await createUsers(1)
+
+    await alice.createRoom()
+
+    // Click the leave button
+    await alice.leaveRoom()
+
+    // Should navigate to home page (not refresh back to room)
+    await expect(alice.page).toHaveURL('http://localhost:5173/')
+
+    // Should see the home page content (create room button)
+    await expect(alice.page.locator('text=Create Room')).toBeVisible()
+  })
 })
