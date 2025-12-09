@@ -115,4 +115,35 @@ test.describe('Kick', () => {
     const charlieChat = charlie.page.locator('#chat-messages')
     await expect(charlieChat.locator('text=was kicked from the room')).toBeVisible()
   })
+
+  test('kicking non-voter auto-reveals when remaining have voted', async ({ createUsers }) => {
+    const [alice, bob, charlie] = await createUsers(3)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+    await charlie.goto(roomUrl)
+    await charlie.joinRoom()
+
+    // Alice and Bob vote, Charlie doesn't
+    await alice.vote('5')
+    await bob.vote('8')
+
+    // Wait for votes to register
+    await alice.page.waitForTimeout(300)
+
+    // Room should NOT be revealed yet (Charlie hasn't voted)
+    await alice.expectNotRevealed()
+
+    // Alice kicks Charlie (the non-voter)
+    await alice.kickParticipant('Charlie')
+
+    // Now room should auto-reveal since all remaining participants have voted
+    await alice.expectRevealed()
+    await bob.expectRevealed()
+
+    // Verify the votes are correct
+    await alice.expectVoteValue('Alice', '5')
+    await alice.expectVoteValue('Bob', '8')
+  })
 })

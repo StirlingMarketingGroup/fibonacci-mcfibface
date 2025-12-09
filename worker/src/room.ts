@@ -619,6 +619,9 @@ export class RoomDO extends DurableObject {
 
         this.broadcast({ type: 'participant_left', participantId: targetId })
         this.broadcast({ type: 'chat', message: systemMessage })
+
+        // Check if kicking this person causes all remaining participants to have voted
+        await this.checkAndReveal(state)
         break
       }
 
@@ -698,6 +701,68 @@ export class RoomDO extends DurableObject {
           ws.send(messageStr)
         } catch {
           // Socket might be closed
+        }
+      }
+    }
+  }
+
+  private async checkAndReveal(state: RoomState): Promise<void> {
+    // Don't reveal if already revealed
+    if (state.revealed) return
+
+    // Check if everyone has voted (only consider active, non-left participants)
+    const activeParticipants = Object.values(state.participants).filter(p => !p.left)
+    const allVoted = activeParticipants.every(p => p.vote !== null)
+
+    if (allVoted && activeParticipants.length > 0) {
+      state.revealed = true
+      await this.saveState()
+
+      // Send reveal message
+      const revealMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        participantId: 'system',
+        name: 'System',
+        emoji: '🎭',
+        color: '#F59E0B', // Amber
+        text: randomFrom(ROUND_REVEAL_MESSAGES),
+        timestamp: Date.now(),
+      }
+      state.chat.push(revealMessage)
+      if (state.chat.length > 100) {
+        state.chat = state.chat.slice(-100)
+      }
+      await this.saveState()
+      this.broadcast({ type: 'chat', message: revealMessage })
+
+      this.broadcast({
+        type: 'reveal',
+        votes: activeParticipants.map(p => ({
+          participantId: p.id,
+          vote: p.vote,
+        })),
+      })
+
+      // Check for consensus (everyone voted the same) - only if 2+ participants
+      if (activeParticipants.length >= 2) {
+        const votes = activeParticipants.map(p => p.vote)
+        const allSame = votes.every(v => v === votes[0])
+        if (allSame && votes[0] !== null) {
+          const consensusMessage: ChatMessage = {
+            id: crypto.randomUUID(),
+            participantId: 'system',
+            name: 'System',
+            emoji: '🎯',
+            color: '#22C55E', // Green
+            text: randomFrom(CONSENSUS_MESSAGES).replace('{vote}', votes[0]),
+            timestamp: Date.now(),
+          }
+          state.chat.push(consensusMessage)
+          if (state.chat.length > 100) {
+            state.chat = state.chat.slice(-100)
+          }
+          await this.saveState()
+          this.broadcast({ type: 'chat', message: consensusMessage })
         }
       }
     }
