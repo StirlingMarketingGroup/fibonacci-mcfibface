@@ -363,6 +363,10 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
     // Save identity for reconnection
     setRoomIdentity(roomId, state.participantId!, state.emoji!, state.color!)
     renderRoom(app, roomId)
+    // Request stats if room is already revealed (e.g., joining mid-session)
+    if (state.revealed) {
+      connection?.send({ type: 'get_stats' })
+    }
   })
 
   connection.on('participant_joined', async (data) => {
