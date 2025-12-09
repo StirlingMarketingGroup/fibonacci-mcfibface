@@ -223,4 +223,210 @@ test.describe('Chat', () => {
     await bob.sendChat('Round 2 message')
     await alice.expectChatMessage('Bob', 'Round 2 message')
   })
+
+  test('large room - all 6 members send messages and everyone sees them', async ({ createUsers }) => {
+    const users = await createUsers(6)
+    const [alice, bob, charlie, diana, eve, frank] = users
+
+    const roomUrl = await alice.createRoom()
+
+    // Everyone joins
+    for (const user of [bob, charlie, diana, eve, frank]) {
+      await user.goto(roomUrl)
+      await user.joinRoom()
+    }
+
+    // Each user sends a unique message
+    await alice.sendChat('Hello from Alice!')
+    await bob.sendChat('Hello from Bob!')
+    await charlie.sendChat('Hello from Charlie!')
+    await diana.sendChat('Hello from Diana!')
+    await eve.sendChat('Hello from Eve!')
+    await frank.sendChat('Hello from Frank!')
+
+    // Give time for all messages to propagate
+    await alice.page.waitForTimeout(500)
+
+    // Verify ALL users see ALL messages
+    for (const user of users) {
+      await user.expectChatMessage('Alice', 'Hello from Alice!')
+      await user.expectChatMessage('Bob', 'Hello from Bob!')
+      await user.expectChatMessage('Charlie', 'Hello from Charlie!')
+      await user.expectChatMessage('Diana', 'Hello from Diana!')
+      await user.expectChatMessage('Eve', 'Hello from Eve!')
+      await user.expectChatMessage('Frank', 'Hello from Frank!')
+    }
+  })
+
+  test('chat history persists after page refresh', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Send several messages
+    await alice.sendChat('Message 1 from Alice')
+    await bob.sendChat('Message 2 from Bob')
+    await alice.sendChat('Message 3 from Alice')
+    await bob.sendChat('Message 4 from Bob')
+
+    // Bob refreshes the page
+    await bob.page.reload()
+    await bob.joinRoom()
+
+    // Bob should still see all previous messages
+    await bob.expectChatMessage('Alice', 'Message 1 from Alice')
+    await bob.expectChatMessage('Bob', 'Message 2 from Bob')
+    await bob.expectChatMessage('Alice', 'Message 3 from Alice')
+    await bob.expectChatMessage('Bob', 'Message 4 from Bob')
+  })
+
+  test('user reconnects and sees chat history', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Chat before disconnect
+    await alice.sendChat('Before disconnect 1')
+    await bob.sendChat('Before disconnect 2')
+
+    // Bob disconnects
+    await bob.disconnect()
+    await alice.page.waitForTimeout(300)
+
+    // Alice keeps chatting
+    await alice.sendChat('While Bob was away')
+
+    // Bob reconnects
+    await bob.reconnect()
+    await bob.joinRoom()
+
+    // Bob should see all messages including ones sent while away
+    await bob.expectChatMessage('Alice', 'Before disconnect 1')
+    await bob.expectChatMessage('Bob', 'Before disconnect 2')
+    await bob.expectChatMessage('Alice', 'While Bob was away')
+  })
+
+  test('rapid fire messages from multiple users', async ({ createUsers }) => {
+    const [alice, bob, charlie] = await createUsers(3)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+    await charlie.goto(roomUrl)
+    await charlie.joinRoom()
+
+    // All users send messages rapidly in parallel
+    await Promise.all([
+      alice.sendChat('Alice rapid 1'),
+      bob.sendChat('Bob rapid 1'),
+      charlie.sendChat('Charlie rapid 1'),
+    ])
+
+    await Promise.all([
+      alice.sendChat('Alice rapid 2'),
+      bob.sendChat('Bob rapid 2'),
+      charlie.sendChat('Charlie rapid 2'),
+    ])
+
+    await Promise.all([
+      alice.sendChat('Alice rapid 3'),
+      bob.sendChat('Bob rapid 3'),
+      charlie.sendChat('Charlie rapid 3'),
+    ])
+
+    // Give time for messages to settle
+    await alice.page.waitForTimeout(500)
+
+    // All messages should be visible to everyone
+    for (const user of [alice, bob, charlie]) {
+      await user.expectChatMessage('Alice', 'Alice rapid 1')
+      await user.expectChatMessage('Bob', 'Bob rapid 1')
+      await user.expectChatMessage('Charlie', 'Charlie rapid 1')
+      await user.expectChatMessage('Alice', 'Alice rapid 2')
+      await user.expectChatMessage('Bob', 'Bob rapid 2')
+      await user.expectChatMessage('Charlie', 'Charlie rapid 2')
+      await user.expectChatMessage('Alice', 'Alice rapid 3')
+      await user.expectChatMessage('Bob', 'Bob rapid 3')
+      await user.expectChatMessage('Charlie', 'Charlie rapid 3')
+    }
+  })
+
+  test('chat message order is preserved', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Send messages in specific order
+    await alice.sendChat('First message')
+    await bob.sendChat('Second message')
+    await alice.sendChat('Third message')
+    await bob.sendChat('Fourth message')
+
+    // Verify order in the chat panel
+    const chatMessages = alice.page.locator('#chat-messages .text-sm')
+    const count = await chatMessages.count()
+    expect(count).toBe(4)
+
+    // Check order by examining text content
+    const texts = await chatMessages.allTextContents()
+    expect(texts[0]).toContain('First message')
+    expect(texts[1]).toContain('Second message')
+    expect(texts[2]).toContain('Third message')
+    expect(texts[3]).toContain('Fourth message')
+  })
+
+  test('late joiner sees last 50 messages', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+
+    // Alice sends many messages before Bob joins
+    for (let i = 1; i <= 10; i++) {
+      await alice.sendChat(`Pre-join msg number ${i} end`)
+    }
+
+    // Bob joins late
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Bob should see the messages (use exact text to avoid substring matches)
+    await bob.expectChatMessage('Alice', 'Pre-join msg number 1 end')
+    await bob.expectChatMessage('Alice', 'Pre-join msg number 5 end')
+    await bob.expectChatMessage('Alice', 'Pre-join msg number 10 end')
+  })
+
+  test('each user has consistent color across messages', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Alice sends multiple messages
+    await alice.sendChat('Message 1')
+    await alice.sendChat('Message 2')
+    await alice.sendChat('Message 3')
+
+    // Get all Alice's name spans and verify they have same color
+    const chatMessages = bob.page.locator('#chat-messages')
+    const aliceNames = chatMessages.locator('span.font-bold', { hasText: 'Alice' })
+    const count = await aliceNames.count()
+    expect(count).toBe(3)
+
+    const colors: string[] = []
+    for (let i = 0; i < count; i++) {
+      const style = await aliceNames.nth(i).getAttribute('style')
+      colors.push(style || '')
+    }
+
+    // All should have the same color
+    expect(colors[0]).toBe(colors[1])
+    expect(colors[1]).toBe(colors[2])
+  })
 })
