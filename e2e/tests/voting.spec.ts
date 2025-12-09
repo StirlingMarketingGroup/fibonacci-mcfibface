@@ -240,4 +240,42 @@ test.describe('Voting', () => {
     // Average of 0.5 and 1 = 0.75
     await alice.expectStats({ average: '0.8' }) // 0.75 rounds to 0.8 with toFixed(1)
   })
+
+  test('user joining after reveal can participate in next round', async ({ createUsers }) => {
+    const [alice, bob, charlie] = await createUsers(3)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Alice and Bob vote, triggering reveal
+    await alice.vote('5')
+    await bob.vote('8')
+    await alice.expectRevealed()
+
+    // Charlie joins after reveal
+    await charlie.goto(roomUrl)
+    await charlie.joinRoom()
+
+    // Charlie should see the revealed state
+    await charlie.expectRevealed()
+    await charlie.expectVoteValue('Alice', '5')
+    await charlie.expectVoteValue('Bob', '8')
+
+    // Alice (host) resets the round
+    await alice.resetRound()
+
+    // Everyone should see round reset
+    await alice.expectNotRevealed()
+    await bob.expectNotRevealed()
+    await charlie.expectNotRevealed()
+
+    // All three can now vote in the new round
+    await alice.vote('3')
+    await bob.vote('3')
+    await charlie.vote('3')
+
+    await alice.expectRevealed()
+    await charlie.expectVoteValue('Charlie', '3')
+  })
 })

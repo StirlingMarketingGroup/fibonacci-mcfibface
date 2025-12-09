@@ -369,14 +369,27 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
                 </svg>
               </button>
             </div>
-            ${isHost ? `
-              <button
-                id="reset-btn"
-                class="bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded-lg text-sm"
+            <div class="flex items-center gap-2">
+              ${isHost ? `
+                <button
+                  id="reset-btn"
+                  class="bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded-lg text-sm"
+                >
+                  Reset Round
+                </button>
+              ` : ''}
+              <a
+                href="https://github.com/StirlingMarketingGroup/fibonacci-mcfibface"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-gray-400 hover:text-white p-2"
+                title="View on GitHub"
               >
-                Reset Round
-              </button>
-            ` : ''}
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
+                </svg>
+              </a>
+            </div>
           </div>
         </header>
 
@@ -420,14 +433,15 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
           `).join('')}
         </div>
         <div class="p-3 border-t border-gray-700">
-          <div class="flex gap-2 items-center">
-            <input
-              type="text"
+          <div class="flex gap-2 items-end">
+            <textarea
               id="chat-input"
               placeholder="Send a message"
               maxlength="500"
-              class="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
-            />
+              rows="1"
+              class="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 resize-none overflow-hidden"
+              style="min-height: 38px; max-height: 120px;"
+            ></textarea>
             <div class="relative group">
               <button type="button" class="w-6 h-6 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-white text-xs font-bold flex items-center justify-center">?</button>
               <div class="absolute bottom-8 right-0 w-64 p-3 bg-gray-800 border border-gray-600 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
@@ -513,19 +527,30 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
     })
   })
 
-  // Chat input
-  const chatInput = document.querySelector<HTMLInputElement>('#chat-input')
-  chatInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      const text = chatInput.value.trim()
-      if (text) {
-        const sent = connection?.send({ type: 'chat', text })
-        if (sent) {
-          chatInput.value = ''
+  // Chat input with auto-grow
+  const chatInput = document.querySelector<HTMLTextAreaElement>('#chat-input')
+  if (chatInput) {
+    const autoGrow = () => {
+      chatInput.style.height = 'auto'
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px'
+    }
+
+    chatInput.addEventListener('input', autoGrow)
+
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        const text = chatInput.value.trim()
+        if (text) {
+          const sent = connection?.send({ type: 'chat', text })
+          if (sent) {
+            chatInput.value = ''
+            autoGrow()
+          }
         }
       }
-    }
-  })
+    })
+  }
 }
 
 function renderParticipantCard(participant: Participant, isHost: boolean): string {
