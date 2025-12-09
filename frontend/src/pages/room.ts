@@ -363,8 +363,6 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
     // Save identity for reconnection
     setRoomIdentity(roomId, state.participantId!, state.emoji!, state.color!)
     renderRoom(app, roomId)
-    // Request stats to populate the sidebar panel
-    connection?.send({ type: 'get_stats' })
   })
 
   connection.on('participant_joined', async (data) => {
@@ -819,8 +817,6 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
 
       <!-- Chat sidebar -->
       <div class="w-80 bg-gray-800 border-l border-gray-700 flex flex-col">
-        <!-- Stats Panel (always visible) -->
-        ${renderStatsPanel()}
         <div class="p-3 border-b border-gray-700 font-bold">Chat</div>
         <div id="chat-messages" class="flex-1 p-3 overflow-y-auto space-y-1">
           ${state.chat.map((m) => m.participantId === 'system'
@@ -1225,68 +1221,6 @@ function formatTime(ms: number): string {
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = Math.round(seconds % 60)
   return `${minutes}m ${remainingSeconds}s`
-}
-
-function renderStatsPanel(): string {
-  const stats = state.sessionStats
-  if (!stats) {
-    return `
-      <div class="p-3 border-b border-gray-700">
-        <div class="text-sm font-bold text-gray-400 mb-2">📊 Session Stats</div>
-        <div class="text-xs text-gray-500 text-center py-2">Loading...</div>
-      </div>
-    `
-  }
-
-  // Build compact awards list
-  const awards: string[] = []
-
-  if (stats.fastestVoter) {
-    awards.push(`<div class="flex items-center gap-1" title="Speed Demon - avg ${formatTime(stats.fastestVoter.avgMs)}"><span>⚡</span><span class="text-yellow-400">${stats.fastestVoter.emoji}</span></div>`)
-  }
-  if (stats.slowestVoter && stats.slowestVoter.name !== stats.fastestVoter?.name) {
-    awards.push(`<div class="flex items-center gap-1" title="Deep Thinker - avg ${formatTime(stats.slowestVoter.avgMs)}"><span>🐢</span><span class="text-blue-400">${stats.slowestVoter.emoji}</span></div>`)
-  }
-  if (stats.mostConsensus && stats.mostConsensus.rate > 0) {
-    awards.push(`<div class="flex items-center gap-1" title="Team Player - ${Math.round(stats.mostConsensus.rate * 100)}% consensus"><span>🤝</span><span class="text-green-400">${stats.mostConsensus.emoji}</span></div>`)
-  }
-  if (stats.leastConsensus && stats.leastConsensus.name !== stats.mostConsensus?.name && stats.leastConsensus.rate < 1) {
-    awards.push(`<div class="flex items-center gap-1" title="Wild Card - ${Math.round(stats.leastConsensus.rate * 100)}% consensus"><span>🎭</span><span class="text-purple-400">${stats.leastConsensus.emoji}</span></div>`)
-  }
-  if (stats.chaosAgent && stats.chaosAgent.count > 0) {
-    awards.push(`<div class="flex items-center gap-1" title="Chaos Agent - ${stats.chaosAgent.count}x"><span>🦆</span><span class="text-orange-400">${stats.chaosAgent.emoji}</span></div>`)
-  }
-  if (stats.highestAvg) {
-    awards.push(`<div class="flex items-center gap-1" title="Big Thinker - avg ${stats.highestAvg.avg.toFixed(1)}"><span>📈</span><span class="text-red-400">${stats.highestAvg.emoji}</span></div>`)
-  }
-  if (stats.lowestAvg && stats.lowestAvg.name !== stats.highestAvg?.name) {
-    awards.push(`<div class="flex items-center gap-1" title="Minimalist - avg ${stats.lowestAvg.avg.toFixed(1)}"><span>🎯</span><span class="text-cyan-400">${stats.lowestAvg.emoji}</span></div>`)
-  }
-
-  return `
-    <div class="p-3 border-b border-gray-700">
-      <div class="text-sm font-bold text-gray-400 mb-2">📊 Session Stats</div>
-      <div class="flex justify-between text-center text-xs mb-2">
-        <div>
-          <div class="text-lg font-bold text-indigo-400">${stats.totalRounds}</div>
-          <div class="text-gray-500">Rounds</div>
-        </div>
-        <div>
-          <div class="text-lg font-bold text-green-400">${stats.yahtzeeCount}</div>
-          <div class="text-gray-500">Yahtzees</div>
-        </div>
-        <div>
-          <div class="text-lg font-bold text-yellow-400">${stats.sessionDurationMins}m</div>
-          <div class="text-gray-500">Duration</div>
-        </div>
-      </div>
-      ${awards.length > 0 ? `
-        <div class="flex flex-wrap gap-2 justify-center text-sm">
-          ${awards.join('')}
-        </div>
-      ` : ''}
-    </div>
-  `
 }
 
 function hideHostElectionModal() {
