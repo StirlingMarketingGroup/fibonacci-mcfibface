@@ -10,8 +10,9 @@ export function setName(name: string) {
 }
 
 interface RoomIdentity {
-  odI: string
+  participantId: string
   emoji: string
+  color: string
 }
 
 export function getRoomIdentity(roomId: string): RoomIdentity | null {
@@ -24,6 +25,6 @@ export function getRoomIdentity(roomId: string): RoomIdentity | null {
   }
 }
 
-export function setRoomIdentity(roomId: string, odI: string, emoji: string) {
-  localStorage.setItem(ROOM_PREFIX + roomId, JSON.stringify({ odI, emoji }))
+export function setRoomIdentity(roomId: string, participantId: string, emoji: string, color: string) {
+  localStorage.setItem(ROOM_PREFIX + roomId, JSON.stringify({ participantId, emoji, color }))
 }

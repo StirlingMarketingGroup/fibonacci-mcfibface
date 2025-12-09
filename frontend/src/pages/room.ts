@@ -6,17 +6,29 @@ interface Participant {
   id: string
   name: string
   emoji: string
+  color: string
   vote: string | null
+}
+
+interface ChatMessage {
+  id: string
+  participantId: string
+  name: string
+  color: string
+  text: string
+  timestamp: number
 }
 
 interface RoomState {
   participantId: string | null
   emoji: string | null
+  color: string | null
   hostId: string | null
   participants: Participant[]
   revealed: boolean
   roundNumber: number
   myVote: string | null
+  chat: ChatMessage[]
 }
 
 const POINT_VALUES = ['.5', '1', '2', '3', '5', '8', '13', '20', '40', '100', '?', '☕', '🦆']
@@ -25,11 +37,13 @@ let connection: RoomConnection | null = null
 let state: RoomState = {
   participantId: null,
   emoji: null,
+  color: null,
   hostId: null,
   participants: [],
   revealed: false,
   roundNumber: 1,
   myVote: null,
+  chat: [],
 }
 
 export function renderRoomPage(roomId: string) {
@@ -99,14 +113,16 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
     state = {
       participantId: data.participantId as string,
       emoji: data.emoji as string,
+      color: data.color as string,
       hostId: data.hostId as string,
       participants: data.participants as Participant[],
       revealed: data.revealed as boolean,
       roundNumber: data.roundNumber as number,
       myVote: null,
+      chat: (data.chat as ChatMessage[]) || [],
     }
     // Save identity for reconnection
-    setRoomIdentity(roomId, state.participantId!, state.emoji!)
+    setRoomIdentity(roomId, state.participantId!, state.emoji!, state.color!)
     renderRoom(app, roomId)
   })
 
@@ -153,6 +169,16 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
     renderRoom(app, roomId)
   })
 
+  connection.on('chat', (data) => {
+    const message = data.message as ChatMessage
+    state.chat.push(message)
+    // Keep last 100 messages
+    if (state.chat.length > 100) {
+      state.chat = state.chat.slice(-100)
+    }
+    appendChatMessage(message)
+  })
+
   connection.on('disconnected', () => {
     app.innerHTML = `
       <div class="flex flex-col items-center justify-center min-h-screen p-8">
@@ -173,8 +199,9 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
     connection.send({
       type: 'join',
       name,
-      odI: existingIdentity?.odI,
+      participantId: existingIdentity?.participantId,
       emoji: existingIdentity?.emoji,
+      color: existingIdentity?.color,
     })
   } catch {
     app.innerHTML = `
@@ -192,52 +219,68 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
   }
 }
 
+function appendChatMessage(message: ChatMessage) {
+  const chatMessages = document.querySelector('#chat-messages')
+  if (!chatMessages) return
+
+  const div = document.createElement('div')
+  div.className = 'text-sm py-1'
+  div.innerHTML = `<span style="color: ${message.color}" class="font-bold">${escapeHtml(message.name)}</span><span class="text-gray-300">: ${escapeHtml(message.text)}</span>`
+  chatMessages.appendChild(div)
+  chatMessages.scrollTop = chatMessages.scrollHeight
+}
+
+function escapeHtml(text: string): string {
+  const div = document.createElement('div')
+  div.textContent = text
+  return div.innerHTML
+}
+
 function renderRoom(app: HTMLDivElement, roomId: string) {
   const isHost = state.participantId === state.hostId
   const roomUrl = `${window.location.origin}/room/${roomId}`
 
   app.innerHTML = `
-    <div class="min-h-screen flex flex-col">
-      <!-- Header -->
-      <header class="bg-gray-800 border-b border-gray-700 p-4">
-        <div class="max-w-4xl mx-auto flex items-center justify-between">
-          <div class="flex items-center gap-4">
-            <h1 class="text-xl font-bold">Round ${state.roundNumber}</h1>
-            <button
-              id="copy-url-btn"
-              class="text-sm text-gray-400 hover:text-white flex items-center gap-2"
-            >
-              <span class="truncate max-w-xs">${roomUrl}</span>
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-            </button>
+    <div class="h-screen flex">
+      <!-- Main content -->
+      <div class="flex-1 flex flex-col min-w-0">
+        <!-- Header -->
+        <header class="bg-gray-800 border-b border-gray-700 p-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+              <h1 class="text-xl font-bold">Round ${state.roundNumber}</h1>
+              <button
+                id="copy-url-btn"
+                class="text-sm text-gray-400 hover:text-white flex items-center gap-2"
+              >
+                <span class="truncate max-w-xs">${roomUrl}</span>
+                <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
+            </div>
+            ${isHost ? `
+              <button
+                id="reset-btn"
+                class="bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded-lg text-sm"
+              >
+                Reset Round
+              </button>
+            ` : ''}
           </div>
-          ${isHost ? `
-            <button
-              id="reset-btn"
-              class="bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded-lg text-sm"
-            >
-              Reset Round
-            </button>
-          ` : ''}
-        </div>
-      </header>
+        </header>
 
-      <!-- Participants -->
-      <main class="flex-1 p-8">
-        <div class="max-w-4xl mx-auto">
+        <!-- Participants -->
+        <main class="flex-1 p-8 overflow-auto">
           <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             ${state.participants.map((p) => renderParticipantCard(p)).join('')}
           </div>
 
           ${state.revealed ? renderStats() : ''}
-        </div>
-      </main>
+        </main>
 
-      <!-- Voting buttons -->
-      <footer class="bg-gray-800 border-t border-gray-700 p-4">
-        <div class="max-w-4xl mx-auto">
+        <!-- Voting buttons -->
+        <footer class="bg-gray-800 border-t border-gray-700 p-4">
           <div class="flex flex-wrap justify-center gap-2">
             ${POINT_VALUES.map((value) => `
               <button
@@ -253,10 +296,37 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
               </button>
             `).join('')}
           </div>
+        </footer>
+      </div>
+
+      <!-- Chat sidebar -->
+      <div class="w-80 bg-gray-800 border-l border-gray-700 flex flex-col">
+        <div class="p-3 border-b border-gray-700 font-bold">Chat</div>
+        <div id="chat-messages" class="flex-1 p-3 overflow-y-auto space-y-1">
+          ${state.chat.map((m) => `
+            <div class="text-sm py-1">
+              <span style="color: ${m.color}" class="font-bold">${escapeHtml(m.name)}</span><span class="text-gray-300">: ${escapeHtml(m.text)}</span>
+            </div>
+          `).join('')}
         </div>
-      </footer>
+        <div class="p-3 border-t border-gray-700">
+          <input
+            type="text"
+            id="chat-input"
+            placeholder="Send a message"
+            maxlength="500"
+            class="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+          />
+        </div>
+      </div>
     </div>
   `
+
+  // Scroll chat to bottom
+  const chatMessages = document.querySelector('#chat-messages')
+  if (chatMessages) {
+    chatMessages.scrollTop = chatMessages.scrollHeight
+  }
 
   // Event listeners
   document.querySelector('#copy-url-btn')?.addEventListener('click', async () => {
@@ -289,6 +359,18 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
       }
     })
   })
+
+  // Chat input
+  const chatInput = document.querySelector<HTMLInputElement>('#chat-input')
+  chatInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const text = chatInput.value.trim()
+      if (text) {
+        connection?.send({ type: 'chat', text })
+        chatInput.value = ''
+      }
+    }
+  })
 }
 
 function renderParticipantCard(participant: Participant): string {
@@ -318,7 +400,7 @@ function renderParticipantCard(participant: Participant): string {
       </div>
       <div class="mt-2 text-center">
         <span class="text-lg">${participant.emoji}</span>
-        <span class="text-sm ${isMe ? 'text-indigo-400' : 'text-gray-400'}">${participant.name}${isMe ? ' (you)' : ''}</span>
+        <span class="text-sm" style="color: ${participant.color || '#9CA3AF'}">${participant.name}${isMe ? ' (you)' : ''}</span>
       </div>
     </div>
   `

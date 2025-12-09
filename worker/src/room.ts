@@ -4,14 +4,25 @@ interface Participant {
   id: string
   name: string
   emoji: string
+  color: string
   vote: string | null
 }
 
+interface ChatMessage {
+  id: string
+  participantId: string
+  name: string
+  color: string
+  text: string
+  timestamp: number
+}
+
 interface RoomState {
-  participants: Map<string, Participant>
+  participants: Record<string, Participant>
   revealed: boolean
   hostId: string | null
   roundNumber: number
+  chat: ChatMessage[]
 }
 
 const ANIMAL_EMOJIS = [
@@ -22,13 +33,51 @@ const ANIMAL_EMOJIS = [
   '🐙', '🦑', '🦐', '🦞', '🦀', '🐡', '🐠', '🐟', '🐬', '🐳',
 ]
 
+// Twitch-style chat colors
+const CHAT_COLORS = [
+  '#FF0000', // Red
+  '#0000FF', // Blue
+  '#008000', // Green
+  '#B22222', // FireBrick
+  '#FF7F50', // Coral
+  '#9ACD32', // YellowGreen
+  '#FF4500', // OrangeRed
+  '#2E8B57', // SeaGreen
+  '#DAA520', // GoldenRod
+  '#D2691E', // Chocolate
+  '#5F9EA0', // CadetBlue
+  '#1E90FF', // DodgerBlue
+  '#FF69B4', // HotPink
+  '#8A2BE2', // BlueViolet
+  '#00FF7F', // SpringGreen
+]
+
 export class RoomDO extends DurableObject {
   private sessions: Map<WebSocket, string> = new Map()
-  private state: RoomState = {
-    participants: new Map(),
-    revealed: false,
-    hostId: null,
-    roundNumber: 1,
+  private state: RoomState | null = null
+
+  private async getState(): Promise<RoomState> {
+    if (!this.state) {
+      const stored = await this.ctx.storage.get<RoomState>('state')
+      this.state = stored || {
+        participants: {},
+        revealed: false,
+        hostId: null,
+        roundNumber: 1,
+        chat: [],
+      }
+      // Migration: add chat array if missing
+      if (!this.state.chat) {
+        this.state.chat = []
+      }
+    }
+    return this.state
+  }
+
+  private async saveState(): Promise<void> {
+    if (this.state) {
+      await this.ctx.storage.put('state', this.state)
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -47,10 +96,11 @@ export class RoomDO extends DurableObject {
 
     // HTTP GET - return room state
     if (request.method === 'GET') {
+      const state = await this.getState()
       return Response.json({
-        participants: Array.from(this.state.participants.values()),
-        revealed: this.state.revealed,
-        roundNumber: this.state.roundNumber,
+        participants: Object.values(state.participants),
+        revealed: state.revealed,
+        roundNumber: state.roundNumber,
       })
     }
 
@@ -71,77 +121,99 @@ export class RoomDO extends DurableObject {
   async webSocketClose(ws: WebSocket) {
     const participantId = this.sessions.get(ws)
     if (participantId) {
-      this.state.participants.delete(participantId)
+      const state = await this.getState()
+      delete state.participants[participantId]
       this.sessions.delete(ws)
+      await this.saveState()
+
       this.broadcast({ type: 'participant_left', participantId })
 
       // If host left, assign new host
-      if (this.state.hostId === participantId) {
-        const firstParticipant = this.state.participants.keys().next().value
-        this.state.hostId = firstParticipant || null
-        if (this.state.hostId) {
-          this.broadcast({ type: 'host_changed', hostId: this.state.hostId })
+      if (state.hostId === participantId) {
+        const participantIds = Object.keys(state.participants)
+        state.hostId = participantIds[0] || null
+        await this.saveState()
+        if (state.hostId) {
+          this.broadcast({ type: 'host_changed', hostId: state.hostId })
         }
       }
     }
   }
 
   private async handleMessage(ws: WebSocket, data: Record<string, unknown>) {
+    const state = await this.getState()
+
     switch (data.type) {
       case 'join': {
-        const requestedId = data.odI as string | undefined
+        const requestedId = data.participantId as string | undefined
         const requestedEmoji = data.emoji as string | undefined
+        const requestedColor = data.color as string | undefined
 
         // Check if this is a reconnecting participant
         let participant: Participant
         let participantId: string
 
-        if (requestedId && this.state.participants.has(requestedId)) {
+        if (requestedId && state.participants[requestedId]) {
           // Reconnecting - update their session
           participantId = requestedId
-          participant = this.state.participants.get(requestedId)!
+          participant = state.participants[requestedId]
           participant.name = data.name as string // Allow name updates
         } else {
           // New participant
-          participantId = requestedId || crypto.randomUUID()
+          participantId = crypto.randomUUID()
           const emoji = requestedEmoji || ANIMAL_EMOJIS[Math.floor(Math.random() * ANIMAL_EMOJIS.length)]
+          const color = requestedColor || CHAT_COLORS[Math.floor(Math.random() * CHAT_COLORS.length)]
 
           participant = {
             id: participantId,
             name: data.name as string,
             emoji,
+            color,
             vote: null,
           }
 
-          this.state.participants.set(participantId, participant)
+          state.participants[participantId] = participant
         }
 
         this.sessions.set(ws, participantId)
 
         // First participant becomes host
-        if (!this.state.hostId) {
-          this.state.hostId = participantId
+        if (!state.hostId) {
+          state.hostId = participantId
         }
+
+        await this.saveState()
 
         // Send current state to new participant
         // Hide vote values unless revealed (show hasVoted status instead)
-        const participantsForClient = Array.from(this.state.participants.values()).map(p => ({
+        const participantsForClient = Object.values(state.participants).map(p => ({
           ...p,
-          vote: this.state.revealed ? p.vote : (p.vote ? 'hidden' : null),
+          vote: state.revealed ? p.vote : (p.vote ? 'hidden' : null),
         }))
+
+        // Send last 50 chat messages
+        const recentChat = state.chat.slice(-50)
 
         ws.send(JSON.stringify({
           type: 'joined',
           participantId,
           emoji: participant.emoji,
-          hostId: this.state.hostId,
+          color: participant.color,
+          hostId: state.hostId,
           participants: participantsForClient,
-          revealed: this.state.revealed,
-          roundNumber: this.state.roundNumber,
+          revealed: state.revealed,
+          roundNumber: state.roundNumber,
+          chat: recentChat,
         }))
 
-        // Broadcast to others
-        this.broadcast({ type: 'participant_joined', participant }, ws)
+        // Broadcast to others (hide vote)
+        this.broadcast({
+          type: 'participant_joined',
+          participant: {
+            ...participant,
+            vote: state.revealed ? participant.vote : (participant.vote ? 'hidden' : null),
+          },
+        }, ws)
         break
       }
 
@@ -149,21 +221,25 @@ export class RoomDO extends DurableObject {
         const participantId = this.sessions.get(ws)
         if (!participantId) return
 
-        const participant = this.state.participants.get(participantId)
-        if (!participant || this.state.revealed) return
+        const participant = state.participants[participantId]
+        if (!participant || state.revealed) return
 
         participant.vote = data.vote as string
+        await this.saveState()
+
         this.broadcast({ type: 'vote_cast', participantId, hasVoted: true })
 
         // Check if everyone has voted
-        const allVoted = Array.from(this.state.participants.values())
-          .every(p => p.vote !== null)
+        const participants = Object.values(state.participants)
+        const allVoted = participants.every(p => p.vote !== null)
 
-        if (allVoted && this.state.participants.size > 0) {
-          this.state.revealed = true
+        if (allVoted && participants.length > 0) {
+          state.revealed = true
+          await this.saveState()
+
           this.broadcast({
             type: 'reveal',
-            votes: Array.from(this.state.participants.values()).map(p => ({
+            votes: participants.map(p => ({
               participantId: p.id,
               vote: p.vote,
             })),
@@ -174,16 +250,47 @@ export class RoomDO extends DurableObject {
 
       case 'reset': {
         const participantId = this.sessions.get(ws)
-        if (participantId !== this.state.hostId) return
+        if (participantId !== state.hostId) return
 
         // Clear all votes
-        for (const participant of this.state.participants.values()) {
+        for (const participant of Object.values(state.participants)) {
           participant.vote = null
         }
-        this.state.revealed = false
-        this.state.roundNumber++
+        state.revealed = false
+        state.roundNumber++
+        await this.saveState()
 
-        this.broadcast({ type: 'round_reset', roundNumber: this.state.roundNumber })
+        this.broadcast({ type: 'round_reset', roundNumber: state.roundNumber })
+        break
+      }
+
+      case 'chat': {
+        const participantId = this.sessions.get(ws)
+        if (!participantId) return
+
+        const participant = state.participants[participantId]
+        if (!participant) return
+
+        const text = (data.text as string || '').trim()
+        if (!text || text.length > 500) return // Max 500 chars
+
+        const chatMessage: ChatMessage = {
+          id: crypto.randomUUID(),
+          participantId,
+          name: participant.name,
+          color: participant.color,
+          text,
+          timestamp: Date.now(),
+        }
+
+        state.chat.push(chatMessage)
+        // Keep only last 100 messages
+        if (state.chat.length > 100) {
+          state.chat = state.chat.slice(-100)
+        }
+        await this.saveState()
+
+        this.broadcast({ type: 'chat', message: chatMessage })
         break
       }
     }
@@ -193,7 +300,11 @@ export class RoomDO extends DurableObject {
     const messageStr = JSON.stringify(message)
     for (const ws of this.ctx.getWebSockets()) {
       if (ws !== exclude) {
-        ws.send(messageStr)
+        try {
+          ws.send(messageStr)
+        } catch {
+          // Socket might be closed
+        }
       }
     }
   }
