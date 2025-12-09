@@ -46,6 +46,9 @@ export interface TestUser {
 
   // Kicked state
   expectKicked(): Promise<void>
+
+  // Identity helpers
+  getIdentity(): Promise<{ emoji: string; color: string }>
 }
 
 class TestUserImpl implements TestUser {
@@ -208,6 +211,18 @@ class TestUserImpl implements TestUser {
 
   async expectKicked() {
     await expect(this.page.locator('text=You were kicked from the room')).toBeVisible({ timeout: 5000 })
+  }
+
+  async getIdentity(): Promise<{ emoji: string; color: string }> {
+    // Find this user's card by name and extract emoji and color
+    const card = this.page.locator('.flex.flex-col.items-center', { hasText: this.name })
+    const emoji = await card.locator('.text-lg').textContent() || ''
+    // Get color from the name element's style (uses text-sm class)
+    const nameEl = card.locator('.text-sm')
+    const style = await nameEl.getAttribute('style') || ''
+    const colorMatch = style.match(/color:\s*(#[0-9A-Fa-f]{6})/i)
+    const color = colorMatch ? colorMatch[1].toUpperCase() : ''
+    return { emoji: emoji.trim(), color }
   }
 }
 

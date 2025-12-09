@@ -36,23 +36,23 @@ const ANIMAL_EMOJIS = [
   '🐙', '🦑', '🦐', '🦞', '🦀', '🐡', '🐠', '🐟', '🐬', '🐳',
 ]
 
-// Twitch-style chat colors
+// High-contrast colors optimized for dark backgrounds
 const CHAT_COLORS = [
-  '#FF0000', // Red
-  '#0000FF', // Blue
-  '#008000', // Green
-  '#B22222', // FireBrick
-  '#FF7F50', // Coral
-  '#9ACD32', // YellowGreen
-  '#FF4500', // OrangeRed
-  '#2E8B57', // SeaGreen
-  '#DAA520', // GoldenRod
-  '#D2691E', // Chocolate
-  '#5F9EA0', // CadetBlue
-  '#1E90FF', // DodgerBlue
-  '#FF69B4', // HotPink
-  '#8A2BE2', // BlueViolet
-  '#00FF7F', // SpringGreen
+  '#FF6B6B', // Soft Red
+  '#4ECDC4', // Teal
+  '#FFE66D', // Yellow
+  '#95E1D3', // Mint
+  '#F38181', // Coral
+  '#AA96DA', // Lavender
+  '#FCBAD3', // Pink
+  '#A8E6CF', // Light Green
+  '#DDA0DD', // Plum
+  '#87CEEB', // Sky Blue
+  '#F0E68C', // Khaki
+  '#FFA07A', // Light Salmon
+  '#98D8C8', // Seafoam
+  '#FFB347', // Pastel Orange
+  '#B19CD9', // Light Purple
 ]
 
 // Funny join messages - {name} will be replaced with the user's name
@@ -109,6 +109,41 @@ const CONSENSUS_MESSAGES = [
 
 function randomFrom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
+}
+
+function getUsedIdentities(participants: Record<string, Participant>): Set<string> {
+  const used = new Set<string>()
+  for (const p of Object.values(participants)) {
+    if (!p.left) {
+      used.add(`${p.emoji}|${p.color}`)
+    }
+  }
+  return used
+}
+
+function pickUniqueIdentity(
+  participants: Record<string, Participant>
+): { emoji: string; color: string } {
+  const used = getUsedIdentities(participants)
+
+  // Try to find an unused combination
+  const shuffledEmojis = [...ANIMAL_EMOJIS].sort(() => Math.random() - 0.5)
+  const shuffledColors = [...CHAT_COLORS].sort(() => Math.random() - 0.5)
+
+  for (const emoji of shuffledEmojis) {
+    for (const color of shuffledColors) {
+      const key = `${emoji}|${color}`
+      if (!used.has(key)) {
+        return { emoji, color }
+      }
+    }
+  }
+
+  // Fallback if all combos are taken (750 combinations, very unlikely)
+  return {
+    emoji: randomFrom(ANIMAL_EMOJIS),
+    color: randomFrom(CHAT_COLORS),
+  }
 }
 
 interface WebSocketAttachment {
@@ -256,10 +291,11 @@ export class RoomDO extends DurableObject {
           state.participants[participantId] = participant
           // Not a reconnection - broadcast to others
         } else {
-          // New participant
+          // New participant - pick unique emoji+color combo
           participantId = crypto.randomUUID()
-          const emoji = requestedEmoji || ANIMAL_EMOJIS[Math.floor(Math.random() * ANIMAL_EMOJIS.length)]
-          const color = requestedColor || CHAT_COLORS[Math.floor(Math.random() * CHAT_COLORS.length)]
+          const identity = pickUniqueIdentity(state.participants)
+          const emoji = requestedEmoji || identity.emoji
+          const color = requestedColor || identity.color
 
           participant = {
             id: participantId,
