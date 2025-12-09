@@ -418,6 +418,16 @@ export class RoomDO extends DurableObject {
         const requestedEmoji = data.emoji as string | undefined
         const requestedColor = data.color as string | undefined
 
+        console.log('[JOIN] Request:', {
+          requestedId,
+          requestedEmoji,
+          requestedColor,
+          name: data.name,
+          existsInState: requestedId ? !!state.participants[requestedId] : false,
+          participantCount: Object.keys(state.participants).length,
+          participantIds: Object.keys(state.participants)
+        })
+
         // Check if this is a reconnecting participant
         let participant: Participant
         let participantId: string
@@ -505,6 +515,14 @@ export class RoomDO extends DurableObject {
           roundNumber: state.roundNumber,
           chat: recentChat,
         }))
+
+        console.log('[JOIN] Result:', {
+          participantId,
+          isReconnection,
+          participantName: participant.name,
+          participantLeft: participant.left,
+          willBroadcast: !isReconnection
+        })
 
         // Only broadcast participant_joined for new participants, not reconnections
         if (!isReconnection) {
