@@ -1,0 +1,368 @@
+import { getName, setName, getRoomIdentity, setRoomIdentity } from '../lib/storage'
+import { RoomConnection } from '../lib/websocket'
+import { navigate } from '../lib/router'
+
+interface Participant {
+  id: string
+  name: string
+  emoji: string
+  vote: string | null
+}
+
+interface RoomState {
+  participantId: string | null
+  emoji: string | null
+  hostId: string | null
+  participants: Participant[]
+  revealed: boolean
+  roundNumber: number
+  myVote: string | null
+}
+
+const POINT_VALUES = ['.5', '1', '2', '3', '5', '8', '13', '20', '40', '100', '?', '☕', '🦆']
+
+let connection: RoomConnection | null = null
+let state: RoomState = {
+  participantId: null,
+  emoji: null,
+  hostId: null,
+  participants: [],
+  revealed: false,
+  roundNumber: 1,
+  myVote: null,
+}
+
+export function renderRoomPage(roomId: string) {
+  const app = document.querySelector<HTMLDivElement>('#app')!
+  const name = getName()
+
+  // If no name, prompt for it
+  if (!name) {
+    renderNamePrompt(app, roomId)
+    return
+  }
+
+  // Connect to room
+  connectToRoom(app, roomId, name)
+}
+
+function renderNamePrompt(app: HTMLDivElement, roomId: string) {
+  app.innerHTML = `
+    <div class="flex flex-col items-center justify-center min-h-screen p-8">
+      <h1 class="text-3xl font-bold mb-2">Join Room</h1>
+      <p class="text-gray-400 mb-8">Enter your name to join</p>
+
+      <div class="w-full max-w-sm space-y-4">
+        <input
+          type="text"
+          id="name-input"
+          placeholder="Your name"
+          class="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+        />
+
+        <button
+          id="join-btn"
+          disabled
+          class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg text-lg transition-colors"
+        >
+          Join
+        </button>
+      </div>
+    </div>
+  `
+
+  const nameInput = document.querySelector<HTMLInputElement>('#name-input')!
+  const joinBtn = document.querySelector<HTMLButtonElement>('#join-btn')!
+
+  nameInput.addEventListener('input', () => {
+    joinBtn.disabled = !nameInput.value.trim()
+  })
+
+  joinBtn.addEventListener('click', () => {
+    const name = nameInput.value.trim()
+    if (!name) return
+    setName(name)
+    connectToRoom(app, roomId, name)
+  })
+}
+
+async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) {
+  app.innerHTML = `
+    <div class="flex items-center justify-center min-h-screen">
+      <p class="text-gray-400">Connecting...</p>
+    </div>
+  `
+
+  connection = new RoomConnection(roomId)
+
+  connection.on('joined', (data) => {
+    state = {
+      participantId: data.participantId as string,
+      emoji: data.emoji as string,
+      hostId: data.hostId as string,
+      participants: data.participants as Participant[],
+      revealed: data.revealed as boolean,
+      roundNumber: data.roundNumber as number,
+      myVote: null,
+    }
+    // Save identity for reconnection
+    setRoomIdentity(roomId, state.participantId!, state.emoji!)
+    renderRoom(app, roomId)
+  })
+
+  connection.on('participant_joined', (data) => {
+    state.participants.push(data.participant as Participant)
+    renderRoom(app, roomId)
+  })
+
+  connection.on('participant_left', (data) => {
+    state.participants = state.participants.filter((p) => p.id !== data.participantId)
+    renderRoom(app, roomId)
+  })
+
+  connection.on('host_changed', (data) => {
+    state.hostId = data.hostId as string
+    renderRoom(app, roomId)
+  })
+
+  connection.on('vote_cast', (data) => {
+    const participant = state.participants.find((p) => p.id === data.participantId)
+    if (participant) {
+      participant.vote = data.hasVoted ? 'hidden' : null
+    }
+    renderRoom(app, roomId)
+  })
+
+  connection.on('reveal', (data) => {
+    state.revealed = true
+    const votes = data.votes as Array<{ participantId: string; vote: string }>
+    votes.forEach((v) => {
+      const participant = state.participants.find((p) => p.id === v.participantId)
+      if (participant) {
+        participant.vote = v.vote
+      }
+    })
+    renderRoom(app, roomId)
+  })
+
+  connection.on('round_reset', (data) => {
+    state.revealed = false
+    state.roundNumber = data.roundNumber as number
+    state.myVote = null
+    state.participants.forEach((p) => (p.vote = null))
+    renderRoom(app, roomId)
+  })
+
+  connection.on('disconnected', () => {
+    app.innerHTML = `
+      <div class="flex flex-col items-center justify-center min-h-screen p-8">
+        <p class="text-red-400 mb-4">Disconnected from room</p>
+        <button
+          onclick="location.reload()"
+          class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg"
+        >
+          Reconnect
+        </button>
+      </div>
+    `
+  })
+
+  try {
+    await connection.connect()
+    const existingIdentity = getRoomIdentity(roomId)
+    connection.send({
+      type: 'join',
+      name,
+      odI: existingIdentity?.odI,
+      emoji: existingIdentity?.emoji,
+    })
+  } catch {
+    app.innerHTML = `
+      <div class="flex flex-col items-center justify-center min-h-screen p-8">
+        <p class="text-red-400 mb-4">Failed to connect to room</p>
+        <button
+          id="back-btn"
+          class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg"
+        >
+          Back to Home
+        </button>
+      </div>
+    `
+    document.querySelector('#back-btn')?.addEventListener('click', () => navigate('/'))
+  }
+}
+
+function renderRoom(app: HTMLDivElement, roomId: string) {
+  const isHost = state.participantId === state.hostId
+  const roomUrl = `${window.location.origin}/room/${roomId}`
+
+  app.innerHTML = `
+    <div class="min-h-screen flex flex-col">
+      <!-- Header -->
+      <header class="bg-gray-800 border-b border-gray-700 p-4">
+        <div class="max-w-4xl mx-auto flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <h1 class="text-xl font-bold">Round ${state.roundNumber}</h1>
+            <button
+              id="copy-url-btn"
+              class="text-sm text-gray-400 hover:text-white flex items-center gap-2"
+            >
+              <span class="truncate max-w-xs">${roomUrl}</span>
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </button>
+          </div>
+          ${isHost ? `
+            <button
+              id="reset-btn"
+              class="bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded-lg text-sm"
+            >
+              Reset Round
+            </button>
+          ` : ''}
+        </div>
+      </header>
+
+      <!-- Participants -->
+      <main class="flex-1 p-8">
+        <div class="max-w-4xl mx-auto">
+          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            ${state.participants.map((p) => renderParticipantCard(p)).join('')}
+          </div>
+
+          ${state.revealed ? renderStats() : ''}
+        </div>
+      </main>
+
+      <!-- Voting buttons -->
+      <footer class="bg-gray-800 border-t border-gray-700 p-4">
+        <div class="max-w-4xl mx-auto">
+          <div class="flex flex-wrap justify-center gap-2">
+            ${POINT_VALUES.map((value) => `
+              <button
+                data-vote="${value}"
+                class="vote-btn w-12 h-12 rounded-lg font-bold text-lg transition-all ${
+                  state.myVote === value
+                    ? 'bg-indigo-600 text-white scale-110'
+                    : 'bg-gray-700 hover:bg-gray-600 text-white'
+                } ${state.revealed ? 'opacity-50 cursor-not-allowed' : ''}"
+                ${state.revealed ? 'disabled' : ''}
+              >
+                ${value}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      </footer>
+    </div>
+  `
+
+  // Event listeners
+  document.querySelector('#copy-url-btn')?.addEventListener('click', async () => {
+    await navigator.clipboard.writeText(roomUrl)
+    const btn = document.querySelector('#copy-url-btn')
+    if (btn) {
+      const original = btn.innerHTML
+      btn.innerHTML = '<span class="text-green-400">Copied!</span>'
+      setTimeout(() => (btn.innerHTML = original), 2000)
+    }
+  })
+
+  document.querySelector('#reset-btn')?.addEventListener('click', () => {
+    connection?.send({ type: 'reset' })
+  })
+
+  document.querySelectorAll('.vote-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (state.revealed) return
+      const vote = btn.getAttribute('data-vote')
+      if (vote) {
+        state.myVote = vote
+        connection?.send({ type: 'vote', vote })
+
+        // Update my own participant
+        const me = state.participants.find((p) => p.id === state.participantId)
+        if (me) me.vote = 'hidden'
+
+        renderRoom(app, roomId)
+      }
+    })
+  })
+}
+
+function renderParticipantCard(participant: Participant): string {
+  const isMe = participant.id === state.participantId
+  const hasVoted = participant.vote !== null
+  const showVote = state.revealed && participant.vote
+
+  let cardContent: string
+  if (showVote) {
+    cardContent = `<span class="text-2xl font-bold">${participant.vote}</span>`
+  } else if (hasVoted) {
+    cardContent = `<span class="text-3xl">🃏</span>`
+  } else {
+    cardContent = `<span class="text-gray-500">...</span>`
+  }
+
+  return `
+    <div class="flex flex-col items-center">
+      <div class="w-20 h-28 rounded-lg flex items-center justify-center ${
+        showVote
+          ? 'bg-indigo-600'
+          : hasVoted
+          ? 'bg-gradient-to-br from-indigo-600 to-purple-600'
+          : 'bg-gray-700 border-2 border-dashed border-gray-600'
+      }">
+        ${cardContent}
+      </div>
+      <div class="mt-2 text-center">
+        <span class="text-lg">${participant.emoji}</span>
+        <span class="text-sm ${isMe ? 'text-indigo-400' : 'text-gray-400'}">${participant.name}${isMe ? ' (you)' : ''}</span>
+      </div>
+    </div>
+  `
+}
+
+function renderStats(): string {
+  const numericVotes = state.participants
+    .map((p) => parseFloat(p.vote || ''))
+    .filter((v) => !isNaN(v))
+
+  if (numericVotes.length === 0) {
+    return ''
+  }
+
+  const sum = numericVotes.reduce((a, b) => a + b, 0)
+  const avg = sum / numericVotes.length
+  const sorted = [...numericVotes].sort((a, b) => a - b)
+  const median = sorted[Math.floor(sorted.length / 2)]
+  const spread = sorted[sorted.length - 1] - sorted[0]
+
+  const allSame = numericVotes.every((v) => v === numericVotes[0])
+
+  return `
+    <div class="mt-8 p-6 bg-gray-800 rounded-lg">
+      <h2 class="text-lg font-bold mb-4">Results</h2>
+      <div class="grid grid-cols-3 gap-4 text-center">
+        <div>
+          <div class="text-2xl font-bold text-indigo-400">${avg.toFixed(1)}</div>
+          <div class="text-sm text-gray-400">Average</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-indigo-400">${median}</div>
+          <div class="text-sm text-gray-400">Median</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-indigo-400">${spread}</div>
+          <div class="text-sm text-gray-400">Spread</div>
+        </div>
+      </div>
+      ${allSame ? `
+        <div class="mt-4 text-center text-green-400 font-bold">
+          🎉 Consensus!
+        </div>
+      ` : ''}
+    </div>
+  `
+}

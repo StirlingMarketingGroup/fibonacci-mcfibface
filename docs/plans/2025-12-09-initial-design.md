@@ -97,12 +97,18 @@ No accounts. No config. Create a room, share the link, point tickets.
 - **TypeScript** - type safety
 - **Tailwind CSS** - styling, animations
 - **Vanilla TS** - no framework needed
-- **GitHub Pages** - hosting from `dist/`
 
 ### Backend
+- **Cloudflare Pages** - hosts static frontend + Workers together
 - **Cloudflare Workers** - HTTP routing, WebSocket upgrade
 - **Durable Objects** - room state, connection management
 - **TypeScript** - Cloudflare has good TS support
+
+### Why Cloudflare Pages (not GitHub Pages)
+- Single deployment for frontend + backend
+- No CORS issues (same origin)
+- Free subdomain: `fibonacci-mcfibface.pages.dev`
+- Automatic preview deployments on PRs
 
 ### Data Flow
 1. Create room → Worker creates Durable Object with unique ID
@@ -139,7 +145,7 @@ fibonacci-mcfibface/
 
 **$0**
 
-- GitHub Pages: Free
+- Cloudflare Pages: Free
 - Cloudflare Workers: Free tier (100k requests/day)
 - Durable Objects: Free tier generous for low traffic
 - No database costs
@@ -157,13 +163,11 @@ fibonacci-mcfibface/
 
 ## Next Steps
 
-1. **Create GitHub repo** - `gh repo create fibonacci-mcfibface --public`
-2. **Scaffold frontend** - Vite + TypeScript + Tailwind in `frontend/`
-3. **Scaffold worker** - Cloudflare Worker + Durable Object in `worker/`
-4. **Build homepage** - Create room button, name input, localStorage
-5. **Build room UI** - Participant cards, voting buttons, stats display
-6. **Implement Durable Object** - Room state, WebSocket handling, broadcast
-7. **Wire up WebSockets** - Connect frontend to worker
-8. **Add animations** - Card flips, confetti, staggered reveals
-9. **Deploy** - GitHub Pages for frontend, Cloudflare for worker
-10. **Set up GitHub Actions** - Auto-deploy on push
+1. **Scaffold frontend** - Vite + TypeScript + Tailwind
+2. **Scaffold worker** - Cloudflare Pages + Worker + Durable Object
+3. **Build homepage** - Create room button, name input, localStorage
+4. **Build room UI** - Participant cards, voting buttons, stats display
+5. **Implement Durable Object** - Room state, WebSocket handling, broadcast
+6. **Wire up WebSockets** - Connect frontend to worker
+7. **Add animations** - Card flips, confetti, staggered reveals
+8. **Deploy** - Single `wrangler pages deploy` for everything
