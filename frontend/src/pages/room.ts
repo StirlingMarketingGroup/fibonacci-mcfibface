@@ -173,7 +173,16 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
   })
 
   connection.on('participant_joined', (data) => {
-    state.participants.push(data.participant as Participant)
+    const newParticipant = data.participant as Participant
+    // Check if participant already exists (prevent duplicates on reconnection)
+    const existingIndex = state.participants.findIndex((p) => p.id === newParticipant.id)
+    if (existingIndex >= 0) {
+      // Update existing participant
+      state.participants[existingIndex] = newParticipant
+    } else {
+      // Add new participant
+      state.participants.push(newParticipant)
+    }
     renderRoom(app, roomId)
   })
 
