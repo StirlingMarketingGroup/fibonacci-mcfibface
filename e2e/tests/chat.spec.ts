@@ -468,6 +468,49 @@ test.describe('Chat', () => {
     await expect(chatMessages.locator('img.chat-sticker')).toBeVisible()
   })
 
+  test('connection remains active after idle period', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Send initial message
+    await alice.sendChat('Before idle')
+    await bob.expectChatMessage('Alice', 'Before idle')
+
+    // Wait 10 seconds (simulating idle time)
+    await alice.page.waitForTimeout(10000)
+
+    // Try to send another message - this should still work
+    await alice.sendChat('After idle')
+    await bob.expectChatMessage('Alice', 'After idle')
+
+    // Bob should also be able to send
+    await bob.sendChat('Bob after idle too')
+    await alice.expectChatMessage('Bob', 'Bob after idle too')
+  })
+
+  test('voting works after idle period', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Wait 10 seconds
+    await alice.page.waitForTimeout(10000)
+
+    // Voting should still work
+    await alice.vote('5')
+    await bob.expectVoteHidden('Alice')
+
+    await bob.vote('8')
+    await alice.expectRevealed()
+    await alice.expectVoteValue('Alice', '5')
+    await alice.expectVoteValue('Bob', '8')
+  })
+
   test('each user has consistent color across messages', async ({ createUsers }) => {
     const [alice, bob] = await createUsers(2)
 

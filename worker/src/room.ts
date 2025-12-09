@@ -52,9 +52,21 @@ const CHAT_COLORS = [
   '#00FF7F', // SpringGreen
 ]
 
+interface WebSocketAttachment {
+  participantId: string
+}
+
 export class RoomDO extends DurableObject {
-  private sessions: Map<WebSocket, string> = new Map()
   private state: RoomState | null = null
+
+  private getParticipantId(ws: WebSocket): string | null {
+    const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
+    return attachment?.participantId ?? null
+  }
+
+  private setParticipantId(ws: WebSocket, participantId: string): void {
+    ws.serializeAttachment({ participantId } satisfies WebSocketAttachment)
+  }
 
   private async getState(): Promise<RoomState> {
     if (!this.state) {
@@ -132,11 +144,10 @@ export class RoomDO extends DurableObject {
   }
 
   async webSocketClose(ws: WebSocket) {
-    const participantId = this.sessions.get(ws)
+    const participantId = this.getParticipantId(ws)
     if (participantId) {
       const state = await this.getState()
       delete state.participants[participantId]
-      this.sessions.delete(ws)
       await this.saveState()
 
       this.broadcast({ type: 'participant_left', participantId })
@@ -190,7 +201,7 @@ export class RoomDO extends DurableObject {
 
         const isReconnection = requestedId && requestedId === participantId
 
-        this.sessions.set(ws, participantId)
+        this.setParticipantId(ws, participantId)
 
         // First participant becomes host
         if (!state.hostId) {
@@ -236,7 +247,7 @@ export class RoomDO extends DurableObject {
       }
 
       case 'vote': {
-        const participantId = this.sessions.get(ws)
+        const participantId = this.getParticipantId(ws)
         if (!participantId) return
 
         const participant = state.participants[participantId]
@@ -267,7 +278,7 @@ export class RoomDO extends DurableObject {
       }
 
       case 'reset': {
-        const participantId = this.sessions.get(ws)
+        const participantId = this.getParticipantId(ws)
         if (participantId !== state.hostId) return
 
         // Clear all votes
@@ -283,7 +294,7 @@ export class RoomDO extends DurableObject {
       }
 
       case 'chat': {
-        const participantId = this.sessions.get(ws)
+        const participantId = this.getParticipantId(ws)
         if (!participantId) return
 
         const participant = state.participants[participantId]
@@ -313,7 +324,7 @@ export class RoomDO extends DurableObject {
       }
 
       case 'kick': {
-        const requesterId = this.sessions.get(ws)
+        const requesterId = this.getParticipantId(ws)
         if (requesterId !== state.hostId) return // Only host can kick
 
         const targetId = data.participantId as string
@@ -325,8 +336,8 @@ export class RoomDO extends DurableObject {
         const targetName = targetParticipant.name
 
         // Find the target's WebSocket and close it
-        for (const [targetWs, participantId] of this.sessions.entries()) {
-          if (participantId === targetId) {
+        for (const targetWs of this.ctx.getWebSockets()) {
+          if (this.getParticipantId(targetWs) === targetId) {
             // Send kicked message to the target before closing
             try {
               targetWs.send(JSON.stringify({ type: 'kicked' }))
