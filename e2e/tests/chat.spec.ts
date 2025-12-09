@@ -401,6 +401,35 @@ test.describe('Chat', () => {
     await bob.expectChatMessage('Alice', 'Pre-join msg number 10 end')
   })
 
+  test('markdown is rendered in chat messages', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Send messages with markdown
+    await alice.sendChat('This is **bold** text')
+    await alice.sendChat('This is *italic* text')
+    await alice.sendChat('This is `code` text')
+    await alice.sendChat('This is ~~strikethrough~~ text')
+
+    // Check that markdown is rendered as HTML
+    const chatMessages = bob.page.locator('#chat-messages')
+
+    // Bold should render as <strong>
+    await expect(chatMessages.locator('strong', { hasText: 'bold' })).toBeVisible()
+
+    // Italic should render as <em>
+    await expect(chatMessages.locator('em', { hasText: 'italic' })).toBeVisible()
+
+    // Code should render as <code>
+    await expect(chatMessages.locator('code', { hasText: 'code' })).toBeVisible()
+
+    // Strikethrough should render as <del>
+    await expect(chatMessages.locator('del', { hasText: 'strikethrough' })).toBeVisible()
+  })
+
   test('each user has consistent color across messages', async ({ createUsers }) => {
     const [alice, bob] = await createUsers(2)
 
