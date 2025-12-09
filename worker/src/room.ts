@@ -175,6 +175,8 @@ export class RoomDO extends DurableObject {
           state.participants[participantId] = participant
         }
 
+        const isReconnection = requestedId && requestedId === participantId
+
         this.sessions.set(ws, participantId)
 
         // First participant becomes host
@@ -186,9 +188,10 @@ export class RoomDO extends DurableObject {
 
         // Send current state to new participant
         // Hide vote values unless revealed (show hasVoted status instead)
+        // But send the participant's own vote so they can restore their selection
         const participantsForClient = Object.values(state.participants).map(p => ({
           ...p,
-          vote: state.revealed ? p.vote : (p.vote ? 'hidden' : null),
+          vote: state.revealed ? p.vote : (p.id === participantId ? p.vote : (p.vote ? 'hidden' : null)),
         }))
 
         // Send last 50 chat messages
@@ -206,14 +209,16 @@ export class RoomDO extends DurableObject {
           chat: recentChat,
         }))
 
-        // Broadcast to others (hide vote)
-        this.broadcast({
-          type: 'participant_joined',
-          participant: {
-            ...participant,
-            vote: state.revealed ? participant.vote : (participant.vote ? 'hidden' : null),
-          },
-        }, ws)
+        // Only broadcast participant_joined for new participants, not reconnections
+        if (!isReconnection) {
+          this.broadcast({
+            type: 'participant_joined',
+            participant: {
+              ...participant,
+              vote: state.revealed ? participant.vote : (participant.vote ? 'hidden' : null),
+            },
+          }, ws)
+        }
         break
       }
 

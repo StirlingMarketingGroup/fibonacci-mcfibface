@@ -110,15 +110,21 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
   connection = new RoomConnection(roomId)
 
   connection.on('joined', (data) => {
+    const participantId = data.participantId as string
+    const participants = data.participants as Participant[]
+    // Restore myVote from participant data (server sends our actual vote back to us)
+    const me = participants.find((p) => p.id === participantId)
+    const myVote = me?.vote && me.vote !== 'hidden' ? me.vote : null
+
     state = {
-      participantId: data.participantId as string,
+      participantId,
       emoji: data.emoji as string,
       color: data.color as string,
       hostId: data.hostId as string,
-      participants: data.participants as Participant[],
+      participants,
       revealed: data.revealed as boolean,
       roundNumber: data.roundNumber as number,
-      myVote: null,
+      myVote,
       chat: (data.chat as ChatMessage[]) || [],
     }
     // Save identity for reconnection
