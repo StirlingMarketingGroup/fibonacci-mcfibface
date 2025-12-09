@@ -1,5 +1,6 @@
 import { navigate } from '../lib/router'
 import { getName, setName } from '../lib/storage'
+import { generateRoomKey } from '../lib/crypto'
 
 export function renderHomePage() {
   const app = document.querySelector<HTMLDivElement>('#app')!
@@ -49,15 +50,18 @@ export function renderHomePage() {
     }
   })
 
-  createBtn.addEventListener('click', () => {
+  createBtn.addEventListener('click', async () => {
     const name = nameInput.value.trim()
     if (!name) return
 
     setName(name)
 
-    // Generate a random room ID
+    // Generate a random room ID and encryption key
     const roomId = generateRoomId()
-    navigate(`/room/${roomId}`)
+    const encryptionKey = await generateRoomKey()
+
+    // Navigate with key in URL fragment (never sent to server)
+    navigate(`/room/${roomId}#${encryptionKey}`)
   })
 }
 

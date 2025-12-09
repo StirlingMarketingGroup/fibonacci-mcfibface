@@ -2,8 +2,49 @@ import { getName, setName, getRoomIdentity, setRoomIdentity } from '../lib/stora
 import { RoomConnection } from '../lib/websocket'
 import { navigate } from '../lib/router'
 import { checkForUpdate } from '../lib/version'
+import { encrypt, decrypt, getKeyFromUrl, isEncrypted } from '../lib/crypto'
 import confetti from 'canvas-confetti'
 import { marked } from 'marked'
+
+// Decrypt names embedded in system message text (wrapped in **...**)
+async function decryptSystemMessageText(text: string, key: string): Promise<string> {
+  // System messages embed names in bold: **encryptedName**
+  // Find all bold patterns and decrypt if they look encrypted
+  const boldPattern = /\*\*([^*]+)\*\*/g
+  const matches = [...text.matchAll(boldPattern)]
+
+  let result = text
+  for (const match of matches) {
+    const possiblyEncrypted = match[1]
+    if (isEncrypted(possiblyEncrypted)) {
+      const decrypted = await decrypt(possiblyEncrypted, key)
+      result = result.replace(`**${possiblyEncrypted}**`, `**${decrypted}**`)
+    }
+  }
+
+  return result
+}
+
+// Decrypt names in session stats
+async function decryptSessionStats(stats: SessionStats, key: string): Promise<SessionStats> {
+  const decryptName = async (obj: { name: string; emoji: string } | null) => {
+    if (obj && isEncrypted(obj.name)) {
+      obj.name = await decrypt(obj.name, key)
+    }
+  }
+
+  await Promise.all([
+    decryptName(stats.fastestVoter),
+    decryptName(stats.slowestVoter),
+    decryptName(stats.mostConsensus),
+    decryptName(stats.leastConsensus),
+    decryptName(stats.chaosAgent),
+    decryptName(stats.highestAvg),
+    decryptName(stats.lowestAvg),
+  ])
+
+  return stats
+}
 
 // Configure marked for inline-only rendering (no block elements)
 marked.use({
@@ -54,6 +95,7 @@ interface RoomState {
   myVote: string | null
   chat: ChatMessage[]
   sessionStats: SessionStats | null
+  encryptionKey: string | null
 }
 
 const POINT_VALUES = ['.5', '1', '2', '3', '5', '8', '13', '20', '40', '100', '?', '☕', '🦆']
@@ -155,11 +197,39 @@ let state: RoomState = {
   myVote: null,
   chat: [],
   sessionStats: null,
+  encryptionKey: null,
 }
 
 export function renderRoomPage(roomId: string) {
   const app = document.querySelector<HTMLDivElement>('#app')!
   const name = getName()
+
+  // Get encryption key from URL fragment
+  const encryptionKey = getKeyFromUrl()
+  if (!encryptionKey) {
+    // No encryption key - show error
+    app.innerHTML = `
+      <div class="flex flex-col items-center justify-center min-h-screen p-8">
+        <div class="text-6xl mb-4">🔒</div>
+        <h1 class="text-2xl font-bold mb-2 text-red-400">Missing Encryption Key</h1>
+        <p class="text-gray-400 mb-6 text-center max-w-md">
+          This room uses end-to-end encryption. The encryption key is missing from the URL.
+          Please ask the room creator for the full link including the key.
+        </p>
+        <button
+          id="back-btn"
+          class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg"
+        >
+          Back to Home
+        </button>
+      </div>
+    `
+    document.querySelector('#back-btn')?.addEventListener('click', () => navigate('/'))
+    return
+  }
+
+  // Store encryption key in state
+  state.encryptionKey = encryptionKey
 
   // If no name, prompt for it
   if (!name) {
@@ -229,9 +299,34 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
 
   connection = new RoomConnection(roomId)
 
-  connection.on('joined', (data) => {
+  connection.on('joined', async (data) => {
     const participantId = data.participantId as string
     const participants = data.participants as Participant[]
+    const chat = (data.chat as ChatMessage[]) || []
+
+    // Decrypt participant names and chat messages
+    const encryptionKey = state.encryptionKey
+    if (encryptionKey) {
+      await Promise.all(participants.map(async (p) => {
+        if (isEncrypted(p.name)) {
+          p.name = await decrypt(p.name, encryptionKey)
+        }
+      }))
+      await Promise.all(chat.map(async (m) => {
+        if (m.participantId === 'system') {
+          // System messages may have encrypted names embedded in bold (**name**)
+          m.text = await decryptSystemMessageText(m.text, encryptionKey)
+        } else {
+          if (isEncrypted(m.name)) {
+            m.name = await decrypt(m.name, encryptionKey)
+          }
+          if (isEncrypted(m.text)) {
+            m.text = await decrypt(m.text, encryptionKey)
+          }
+        }
+      }))
+    }
+
     // Restore myVote from participant data (server sends our actual vote back to us)
     const me = participants.find((p) => p.id === participantId)
     const myVote = me?.vote && me.vote !== 'hidden' ? me.vote : null
@@ -245,15 +340,21 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
       revealed: data.revealed as boolean,
       roundNumber: data.roundNumber as number,
       myVote,
-      chat: (data.chat as ChatMessage[]) || [],
+      chat,
+      sessionStats: null,
+      encryptionKey,
     }
     // Save identity for reconnection
     setRoomIdentity(roomId, state.participantId!, state.emoji!, state.color!)
     renderRoom(app, roomId)
   })
 
-  connection.on('participant_joined', (data) => {
+  connection.on('participant_joined', async (data) => {
     const newParticipant = data.participant as Participant
+    // Decrypt participant name
+    if (state.encryptionKey && isEncrypted(newParticipant.name)) {
+      newParticipant.name = await decrypt(newParticipant.name, state.encryptionKey)
+    }
     // Check if participant already exists (prevent duplicates on reconnection)
     const existingIndex = state.participants.findIndex((p) => p.id === newParticipant.id)
     if (existingIndex >= 0) {
@@ -302,8 +403,22 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
     renderRoom(app, roomId)
   })
 
-  connection.on('chat', (data) => {
+  connection.on('chat', async (data) => {
     const message = data.message as ChatMessage
+    // Decrypt chat message
+    if (state.encryptionKey) {
+      if (message.participantId === 'system') {
+        // System messages may have encrypted names embedded in bold (**name**)
+        message.text = await decryptSystemMessageText(message.text, state.encryptionKey)
+      } else {
+        if (isEncrypted(message.name)) {
+          message.name = await decrypt(message.name, state.encryptionKey)
+        }
+        if (isEncrypted(message.text)) {
+          message.text = await decrypt(message.text, state.encryptionKey)
+        }
+      }
+    }
     state.chat.push(message)
     // Keep last 100 messages
     if (state.chat.length > 100) {
@@ -372,8 +487,12 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
     document.querySelector('#blackjack-btn')?.addEventListener('click', () => navigate('/'))
   })
 
-  connection.on('stats', (data) => {
-    const stats = data.stats as SessionStats
+  connection.on('stats', async (data) => {
+    let stats = data.stats as SessionStats
+    // Decrypt names in stats
+    if (state.encryptionKey) {
+      stats = await decryptSessionStats(stats, state.encryptionKey)
+    }
     // If revealed, store stats and re-render to show inline
     // Otherwise show the modal (when clicking the stats button)
     if (state.revealed) {
@@ -387,9 +506,13 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
   try {
     await connection.connect()
     const existingIdentity = getRoomIdentity(roomId)
+    // Encrypt name before sending to server
+    const encryptedName = state.encryptionKey
+      ? await encrypt(name, state.encryptionKey)
+      : name
     connection.send({
       type: 'join',
-      name,
+      name: encryptedName,
       participantId: existingIdentity?.participantId,
       emoji: existingIdentity?.emoji,
       color: existingIdentity?.color,
@@ -540,7 +663,10 @@ function showConnectionStatus(status: 'connected' | 'reconnecting') {
 
 function renderRoom(app: HTMLDivElement, roomId: string) {
   const isHost = state.participantId === state.hostId
-  const roomUrl = `${window.location.origin}/room/${roomId}`
+  // Include encryption key in shareable URL
+  const roomUrl = state.encryptionKey
+    ? `${window.location.origin}/room/${roomId}#${state.encryptionKey}`
+    : `${window.location.origin}/room/${roomId}`
 
   // Preserve chat input value and focus before re-render
   const existingChatInput = document.querySelector<HTMLTextAreaElement>('#chat-input')
@@ -804,13 +930,17 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
 
     chatInput.addEventListener('input', autoGrow)
 
-    chatInput.addEventListener('keydown', (e) => {
+    chatInput.addEventListener('keydown', async (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
         const rawText = chatInput.value.trim()
         if (rawText) {
           const text = processSlashCommand(rawText)
-          const sent = connection?.send({ type: 'chat', text })
+          // Encrypt chat message before sending
+          const encryptedText = state.encryptionKey
+            ? await encrypt(text, state.encryptionKey)
+            : text
+          const sent = connection?.send({ type: 'chat', text: encryptedText })
           if (sent) {
             chatInput.value = ''
             autoGrow()
@@ -838,10 +968,14 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
 
     // Handle sticker selection
     document.querySelectorAll('.sticker-option').forEach((btn) => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const url = btn.getAttribute('data-sticker-url')
         if (url) {
-          const sent = connection?.send({ type: 'chat', text: url })
+          // Encrypt sticker URL before sending
+          const encryptedText = state.encryptionKey
+            ? await encrypt(url, state.encryptionKey)
+            : url
+          const sent = connection?.send({ type: 'chat', text: encryptedText })
           if (sent) {
             stickerPicker.classList.add('hidden')
           }

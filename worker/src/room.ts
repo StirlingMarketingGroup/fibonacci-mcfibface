@@ -636,7 +636,8 @@ export class RoomDO extends DurableObject {
         if (!participant) return
 
         const text = (data.text as string || '').trim()
-        if (!text || text.length > 500) return // Max 500 chars
+        // Max 1000 chars to accommodate E2E encrypted messages (encryption adds ~40% overhead)
+        if (!text || text.length > 1000) return
 
         const chatMessage: ChatMessage = {
           id: crypto.randomUUID(),
