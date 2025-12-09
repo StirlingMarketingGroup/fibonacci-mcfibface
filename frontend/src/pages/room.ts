@@ -1091,42 +1091,91 @@ function renderSessionAwards(): string {
   const awards: string[] = []
 
   if (stats.fastestVoter) {
-    awards.push(`<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"><span>⚡</span><span class="text-yellow-400">${stats.fastestVoter.emoji} ${stats.fastestVoter.name}</span><span class="text-gray-400">${formatTime(stats.fastestVoter.avgMs)}</span></span>`)
+    awards.push(`
+      <div class="bg-gray-800 rounded-lg p-3 flex flex-col items-center min-w-[100px]">
+        <span class="text-2xl mb-1">⚡</span>
+        <span class="text-xs text-gray-400 mb-1">Speed Demon</span>
+        <span class="text-sm font-bold text-yellow-400">${stats.fastestVoter.emoji} ${stats.fastestVoter.name}</span>
+        <span class="text-xs text-gray-500">${formatTime(stats.fastestVoter.avgMs)}</span>
+      </div>
+    `)
   }
 
   if (stats.slowestVoter && stats.slowestVoter.name !== stats.fastestVoter?.name) {
-    awards.push(`<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"><span>🐢</span><span class="text-blue-400">${stats.slowestVoter.emoji} ${stats.slowestVoter.name}</span><span class="text-gray-400">${formatTime(stats.slowestVoter.avgMs)}</span></span>`)
+    awards.push(`
+      <div class="bg-gray-800 rounded-lg p-3 flex flex-col items-center min-w-[100px]">
+        <span class="text-2xl mb-1">🐢</span>
+        <span class="text-xs text-gray-400 mb-1">Deep Thinker</span>
+        <span class="text-sm font-bold text-blue-400">${stats.slowestVoter.emoji} ${stats.slowestVoter.name}</span>
+        <span class="text-xs text-gray-500">${formatTime(stats.slowestVoter.avgMs)}</span>
+      </div>
+    `)
   }
 
   if (stats.mostConsensus && stats.mostConsensus.rate > 0) {
-    awards.push(`<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"><span>🤝</span><span class="text-green-400">${stats.mostConsensus.emoji} ${stats.mostConsensus.name}</span><span class="text-gray-400">${Math.round(stats.mostConsensus.rate * 100)}%</span></span>`)
+    awards.push(`
+      <div class="bg-gray-800 rounded-lg p-3 flex flex-col items-center min-w-[100px]">
+        <span class="text-2xl mb-1">🤝</span>
+        <span class="text-xs text-gray-400 mb-1">Team Player</span>
+        <span class="text-sm font-bold text-green-400">${stats.mostConsensus.emoji} ${stats.mostConsensus.name}</span>
+        <span class="text-xs text-gray-500">${Math.round(stats.mostConsensus.rate * 100)}% agree</span>
+      </div>
+    `)
   }
 
   if (stats.leastConsensus && stats.leastConsensus.name !== stats.mostConsensus?.name && stats.leastConsensus.rate < 1) {
-    awards.push(`<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"><span>🎭</span><span class="text-purple-400">${stats.leastConsensus.emoji} ${stats.leastConsensus.name}</span><span class="text-gray-400">${Math.round(stats.leastConsensus.rate * 100)}%</span></span>`)
+    awards.push(`
+      <div class="bg-gray-800 rounded-lg p-3 flex flex-col items-center min-w-[100px]">
+        <span class="text-2xl mb-1">🎭</span>
+        <span class="text-xs text-gray-400 mb-1">Wild Card</span>
+        <span class="text-sm font-bold text-purple-400">${stats.leastConsensus.emoji} ${stats.leastConsensus.name}</span>
+        <span class="text-xs text-gray-500">${Math.round(stats.leastConsensus.rate * 100)}% agree</span>
+      </div>
+    `)
   }
 
   if (stats.chaosAgent && stats.chaosAgent.count > 0) {
-    awards.push(`<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"><span>🦆</span><span class="text-orange-400">${stats.chaosAgent.emoji} ${stats.chaosAgent.name}</span><span class="text-gray-400">${stats.chaosAgent.count}x</span></span>`)
+    awards.push(`
+      <div class="bg-gray-800 rounded-lg p-3 flex flex-col items-center min-w-[100px]">
+        <span class="text-2xl mb-1">🦆</span>
+        <span class="text-xs text-gray-400 mb-1">Chaos Agent</span>
+        <span class="text-sm font-bold text-orange-400">${stats.chaosAgent.emoji} ${stats.chaosAgent.name}</span>
+        <span class="text-xs text-gray-500">${stats.chaosAgent.count}x chaos</span>
+      </div>
+    `)
   }
 
   if (stats.highestAvg) {
-    awards.push(`<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"><span>📈</span><span class="text-red-400">${stats.highestAvg.emoji} ${stats.highestAvg.name}</span><span class="text-gray-400">avg ${stats.highestAvg.avg.toFixed(1)}</span></span>`)
+    awards.push(`
+      <div class="bg-gray-800 rounded-lg p-3 flex flex-col items-center min-w-[100px]">
+        <span class="text-2xl mb-1">📈</span>
+        <span class="text-xs text-gray-400 mb-1">Big Thinker</span>
+        <span class="text-sm font-bold text-red-400">${stats.highestAvg.emoji} ${stats.highestAvg.name}</span>
+        <span class="text-xs text-gray-500">avg ${stats.highestAvg.avg.toFixed(1)}</span>
+      </div>
+    `)
   }
 
   if (stats.lowestAvg && stats.lowestAvg.name !== stats.highestAvg?.name) {
-    awards.push(`<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"><span>🎯</span><span class="text-cyan-400">${stats.lowestAvg.emoji} ${stats.lowestAvg.name}</span><span class="text-gray-400">avg ${stats.lowestAvg.avg.toFixed(1)}</span></span>`)
+    awards.push(`
+      <div class="bg-gray-800 rounded-lg p-3 flex flex-col items-center min-w-[100px]">
+        <span class="text-2xl mb-1">🎯</span>
+        <span class="text-xs text-gray-400 mb-1">Minimalist</span>
+        <span class="text-sm font-bold text-cyan-400">${stats.lowestAvg.emoji} ${stats.lowestAvg.name}</span>
+        <span class="text-xs text-gray-500">avg ${stats.lowestAvg.avg.toFixed(1)}</span>
+      </div>
+    `)
   }
 
   if (awards.length === 0) return ''
 
   return `
-    <div class="mt-4 pt-4 border-t border-gray-700">
-      <div class="flex items-center gap-2 mb-2">
-        <span class="text-sm font-bold text-gray-300">🏆 Session Awards</span>
-        <span class="text-xs text-gray-500">${stats.totalRounds} round${stats.totalRounds !== 1 ? 's' : ''} · ${stats.yahtzeeCount} yahtzee${stats.yahtzeeCount !== 1 ? 's' : ''}</span>
+    <div class="mt-6 pt-4 border-t border-gray-700">
+      <div class="flex items-center justify-center gap-3 mb-4">
+        <span class="text-lg font-bold text-gray-200">🏆 Session Awards</span>
+        <span class="text-sm text-gray-500">${stats.totalRounds} round${stats.totalRounds !== 1 ? 's' : ''} · ${stats.yahtzeeCount} yahtzee${stats.yahtzeeCount !== 1 ? 's' : ''}</span>
       </div>
-      <div class="flex flex-wrap gap-2">
+      <div class="flex flex-wrap justify-center gap-3">
         ${awards.join('')}
       </div>
     </div>
