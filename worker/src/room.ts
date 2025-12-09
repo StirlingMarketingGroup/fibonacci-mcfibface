@@ -270,6 +270,7 @@ interface WebSocketAttachment {
 
 export class RoomDO extends DurableObject {
   private state: RoomState | null = null
+  private stateLoadPromise: Promise<RoomState> | null = null
 
   private getParticipantId(ws: WebSocket): string | null {
     const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
@@ -281,50 +282,65 @@ export class RoomDO extends DurableObject {
   }
 
   private async getState(): Promise<RoomState> {
-    if (!this.state) {
-      const stored = await this.ctx.storage.get<RoomState>('state')
-      const now = Date.now()
-      this.state = stored || {
-        participants: {},
-        votes: {},
-        revealed: false,
-        hostId: null,
-        roundNumber: 1,
-        chat: [],
-        stats: {
-          sessionStartTime: now,
-          roundStartTime: now,
-          yahtzeeCount: 0,
-          participantStats: {},
-        },
-        hostElection: null,
+    // Return cached state if available
+    if (this.state) {
+      return this.state
+    }
+
+    // If already loading, wait for that promise to resolve
+    // This prevents race conditions when multiple WebSocket messages arrive simultaneously
+    if (this.stateLoadPromise) {
+      return this.stateLoadPromise
+    }
+
+    // Start loading and store the promise so concurrent calls can wait on it
+    this.stateLoadPromise = this.loadState()
+    return this.stateLoadPromise
+  }
+
+  private async loadState(): Promise<RoomState> {
+    const stored = await this.ctx.storage.get<RoomState>('state')
+    const now = Date.now()
+    this.state = stored || {
+      participants: {},
+      votes: {},
+      revealed: false,
+      hostId: null,
+      roundNumber: 1,
+      chat: [],
+      stats: {
+        sessionStartTime: now,
+        roundStartTime: now,
+        yahtzeeCount: 0,
+        participantStats: {},
+      },
+      hostElection: null,
+    }
+    // Migration: add chat array if missing
+    if (!this.state.chat) {
+      this.state.chat = []
+    }
+    // Migration: add votes object if missing
+    if (!this.state.votes) {
+      this.state.votes = {}
+    }
+    // Migration: add stats object if missing
+    if (!this.state.stats) {
+      this.state.stats = {
+        sessionStartTime: now,
+        roundStartTime: now,
+        yahtzeeCount: 0,
+        participantStats: {},
       }
-      // Migration: add chat array if missing
-      if (!this.state.chat) {
-        this.state.chat = []
-      }
-      // Migration: add votes object if missing
-      if (!this.state.votes) {
-        this.state.votes = {}
-      }
-      // Migration: add stats object if missing
-      if (!this.state.stats) {
-        this.state.stats = {
-          sessionStartTime: now,
-          roundStartTime: now,
-          yahtzeeCount: 0,
-          participantStats: {},
-        }
-      }
-      // Migration: add hostElection if missing
-      if (this.state.hostElection === undefined) {
-        this.state.hostElection = null
-      }
-      // Migration: add joinedAt to existing participants
-      for (const p of Object.values(this.state.participants)) {
-        if (p.joinedAt === undefined) {
-          p.joinedAt = now
-        }
+    }
+    // Migration: add hostElection if missing
+    if (this.state.hostElection === undefined) {
+      this.state.hostElection = null
+    }
+    // Migration: add joinedAt to existing participants
+    for (const p of Object.values(this.state.participants)) {
+      if (p.joinedAt === undefined) {
+        p.joinedAt = now
       }
     }
     return this.state
@@ -876,6 +892,7 @@ export class RoomDO extends DurableObject {
         // Clear all state
         await this.ctx.storage.deleteAll()
         this.state = null
+        this.stateLoadPromise = null
         break
       }
 

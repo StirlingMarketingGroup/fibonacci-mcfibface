@@ -217,4 +217,50 @@ test.describe('Join and Leave Room', () => {
     // Should see the home page content (create room button)
     await expect(alice.page.locator('text=Create Room')).toBeVisible()
   })
+
+  test('multiple users reconnecting simultaneously does not create duplicates', async ({ createUsers }) => {
+    const [alice, bob, charlie] = await createUsers(3)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+    await charlie.goto(roomUrl)
+    await charlie.joinRoom()
+
+    // Verify everyone is in the room
+    await alice.expectParticipantCount(3)
+
+    // All users disconnect (simulating server restart dropping connections)
+    await alice.disconnect()
+    await bob.disconnect()
+    await charlie.disconnect()
+
+    // Small delay to ensure disconnects are processed
+    await new Promise(r => setTimeout(r, 500))
+
+    // All users reconnect simultaneously
+    await Promise.all([
+      alice.reconnect(),
+      bob.reconnect(),
+      charlie.reconnect(),
+    ])
+
+    // All users need to rejoin
+    await Promise.all([
+      alice.joinRoom(),
+      bob.joinRoom(),
+      charlie.joinRoom(),
+    ])
+
+    // Wait for state to settle
+    await alice.page.waitForTimeout(500)
+
+    // There should be exactly 3 participants, no duplicates
+    await alice.expectParticipantCount(3)
+    await bob.expectParticipantCount(3)
+    await charlie.expectParticipantCount(3)
+
+    // Check that each name appears exactly once
+    await alice.expectParticipants(['Alice', 'Bob', 'Charlie'])
+  })
 })
