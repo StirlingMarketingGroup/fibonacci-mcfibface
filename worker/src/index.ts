@@ -21,6 +21,11 @@ export default {
       })
     }
 
+    // Health check for tests
+    if (url.pathname === '/health') {
+      return new Response('ok', { status: 200 })
+    }
+
     // Room routes: /room/:id
     const roomMatch = url.pathname.match(/^\/room\/([a-zA-Z0-9]+)$/)
     if (roomMatch) {
