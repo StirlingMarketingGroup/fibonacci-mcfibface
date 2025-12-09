@@ -4,6 +4,8 @@
 
 [**Start a Room**](https://fibonacci-mcfibface.pages.dev)
 
+![Screenshot](images/screenshot.png)
+
 ---
 
 ## What is this?
@@ -13,10 +15,13 @@ A real-time planning poker app for remote sprint planning. Create a room, share 
 ## Features
 
 - **Zero friction** - No accounts, no sign-ups, no email verification. Enter your name and go.
+- **End-to-end encrypted** - All room data is encrypted client-side. We can't see your votes or chat.
 - **Real-time sync** - Everyone sees votes update instantly via WebSocket
 - **Auto-reveal** - Cards flip automatically when all participants have voted
-- **Built-in chat** - Discuss estimates without switching apps
-- **Stats on reveal** - See average, median, and spread. Consensus gets a celebration.
+- **Built-in chat** - Discuss estimates without switching apps, with markdown support
+- **Stats on reveal** - See average, median, and spread. Consensus gets confetti! 🎉
+- **Auto-reconnect** - Connection drops? We'll reconnect automatically with status indicator.
+- **Host controls** - Kick participants who are AFK or causing trouble
 - **Persistent rooms** - Rooms stay alive indefinitely. Reconnect anytime with your same identity.
 - **Mobile friendly** - Responsive grid works on phones and tablets
 
