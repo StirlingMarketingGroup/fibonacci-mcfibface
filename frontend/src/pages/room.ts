@@ -84,6 +84,19 @@ interface SessionStats {
   lowestAvg: { name: string; emoji: string; avg: number } | null
 }
 
+interface ElectionCandidate {
+  id: string
+  name: string
+  emoji: string
+}
+
+interface HostElection {
+  candidates: ElectionCandidate[]
+  votedCount: number
+  totalVoters: number
+  hasVoted: boolean
+}
+
 interface RoomState {
   participantId: string | null
   emoji: string | null
@@ -96,6 +109,7 @@ interface RoomState {
   chat: ChatMessage[]
   sessionStats: SessionStats | null
   encryptionKey: string | null
+  hostElection: HostElection | null
 }
 
 const POINT_VALUES = ['.5', '1', '2', '3', '5', '8', '13', '20', '40', '100', '?', '☕', '🦆']
@@ -198,6 +212,7 @@ let state: RoomState = {
   chat: [],
   sessionStats: null,
   encryptionKey: null,
+  hostElection: null,
 }
 
 export function renderRoomPage(roomId: string) {
@@ -343,6 +358,7 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
       chat,
       sessionStats: null,
       encryptionKey,
+      hostElection: null,
     }
     // Save identity for reconnection
     setRoomIdentity(roomId, state.participantId!, state.emoji!, state.color!)
@@ -501,6 +517,47 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
     } else {
       showStatsPanel(stats)
     }
+  })
+
+  connection.on('host_election_started', async (data) => {
+    const candidates = data.candidates as ElectionCandidate[]
+    // Decrypt candidate names
+    if (state.encryptionKey) {
+      await Promise.all(candidates.map(async (c) => {
+        if (isEncrypted(c.name)) {
+          c.name = await decrypt(c.name, state.encryptionKey!)
+        }
+      }))
+    }
+    state.hostElection = {
+      candidates,
+      votedCount: 0,
+      totalVoters: state.participants.length,
+      hasVoted: false,
+    }
+    showHostElectionModal(app, roomId)
+  })
+
+  connection.on('host_election_progress', (data) => {
+    if (state.hostElection) {
+      state.hostElection.votedCount = data.votedCount as number
+      state.hostElection.totalVoters = data.totalVoters as number
+      updateElectionProgress()
+    }
+  })
+
+  connection.on('host_election_ended', (data) => {
+    state.hostId = data.hostId as string
+    state.hostElection = null
+    hideHostElectionModal()
+    renderRoom(app, roomId)
+  })
+
+  connection.on('host_changed', (data) => {
+    state.hostId = data.hostId as string
+    state.hostElection = null
+    hideHostElectionModal()
+    renderRoom(app, roomId)
   })
 
   try {
@@ -1281,4 +1338,198 @@ function showStatsPanel(stats: SessionStats) {
       document.removeEventListener('keydown', escHandler)
     }
   })
+}
+
+function hideHostElectionModal() {
+  const existing = document.querySelector('#election-modal')
+  if (existing) existing.remove()
+}
+
+function updateElectionProgress() {
+  const progressEl = document.querySelector('#election-progress')
+  if (progressEl && state.hostElection) {
+    progressEl.textContent = `${state.hostElection.votedCount} / ${state.hostElection.totalVoters} votes cast`
+  }
+}
+
+function showHostElectionModal(app: HTMLDivElement, roomId: string) {
+  // Remove existing modal if present
+  hideHostElectionModal()
+
+  if (!state.hostElection) return
+
+  const candidates = state.hostElection.candidates
+  // Filter out ourselves - we can't vote for ourselves as #1 choice, but we CAN be a candidate
+  const otherCandidates = candidates.filter(c => c.id !== state.participantId)
+  const me = candidates.find(c => c.id === state.participantId)
+
+  const modal = document.createElement('div')
+  modal.id = 'election-modal'
+  modal.className = 'fixed inset-0 bg-black/70 flex items-center justify-center z-50'
+  modal.innerHTML = `
+    <div class="bg-gray-900 rounded-xl p-6 max-w-md w-full mx-4 max-h-[80vh] overflow-y-auto">
+      <div class="text-center mb-6">
+        <div class="text-4xl mb-2">👑</div>
+        <h2 class="text-2xl font-bold">Host Election</h2>
+        <p class="text-gray-400 text-sm mt-2">The host has left! Rank your preferences for the new host.</p>
+        <p id="election-progress" class="text-gray-500 text-xs mt-1">${state.hostElection.votedCount} / ${state.hostElection.totalVoters} votes cast</p>
+      </div>
+
+      ${state.hostElection.hasVoted ? `
+        <div class="text-center py-8">
+          <div class="text-3xl mb-2">✅</div>
+          <p class="text-gray-300">Vote submitted!</p>
+          <p class="text-gray-500 text-sm">Waiting for others to vote...</p>
+        </div>
+      ` : `
+        <div class="mb-4">
+          <p class="text-sm text-gray-400 mb-2">Drag to reorder. Top = first choice.</p>
+          <div id="candidate-list" class="space-y-2">
+            ${otherCandidates.map((c, i) => `
+              <div
+                class="candidate-item flex items-center gap-3 p-3 bg-gray-800 rounded-lg cursor-move hover:bg-gray-700 transition-colors"
+                data-candidate-id="${c.id}"
+                draggable="true"
+              >
+                <span class="text-gray-500 font-bold w-6">${i + 1}.</span>
+                <span class="text-xl">${c.emoji}</span>
+                <span class="flex-1 font-medium">${escapeHtmlForElection(c.name)}</span>
+                <span class="text-gray-500">☰</span>
+              </div>
+            `).join('')}
+          </div>
+          ${me ? `
+            <p class="text-xs text-gray-500 mt-2 text-center">You (${me.emoji} ${escapeHtmlForElection(me.name)}) are automatically included at the end of your ranking.</p>
+          ` : ''}
+        </div>
+
+        <button
+          id="submit-vote-btn"
+          class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+        >
+          Submit Vote
+        </button>
+      `}
+    </div>
+  `
+
+  document.body.appendChild(modal)
+
+  // Set up drag and drop if not already voted
+  if (!state.hostElection.hasVoted) {
+    setupDragAndDrop()
+
+    document.querySelector('#submit-vote-btn')?.addEventListener('click', () => {
+      submitHostVote(app, roomId)
+    })
+  }
+}
+
+function escapeHtmlForElection(text: string): string {
+  const div = document.createElement('div')
+  div.textContent = text
+  return div.innerHTML
+}
+
+function setupDragAndDrop() {
+  const list = document.querySelector('#candidate-list')
+  if (!list) return
+
+  let draggedItem: HTMLElement | null = null
+
+  list.querySelectorAll('.candidate-item').forEach(item => {
+    const el = item as HTMLElement
+
+    el.addEventListener('dragstart', (e) => {
+      draggedItem = el
+      el.classList.add('opacity-50')
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move'
+      }
+    })
+
+    el.addEventListener('dragend', () => {
+      el.classList.remove('opacity-50')
+      draggedItem = null
+      updateRankNumbers()
+    })
+
+    el.addEventListener('dragover', (e) => {
+      e.preventDefault()
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'move'
+      }
+    })
+
+    el.addEventListener('dragenter', (e) => {
+      e.preventDefault()
+      if (draggedItem && draggedItem !== el) {
+        el.classList.add('border-2', 'border-indigo-500')
+      }
+    })
+
+    el.addEventListener('dragleave', () => {
+      el.classList.remove('border-2', 'border-indigo-500')
+    })
+
+    el.addEventListener('drop', (e) => {
+      e.preventDefault()
+      el.classList.remove('border-2', 'border-indigo-500')
+
+      if (draggedItem && draggedItem !== el) {
+        const listEl = list as HTMLElement
+        const items = [...listEl.querySelectorAll('.candidate-item')]
+        const draggedIndex = items.indexOf(draggedItem)
+        const targetIndex = items.indexOf(el)
+
+        if (draggedIndex < targetIndex) {
+          el.parentNode?.insertBefore(draggedItem, el.nextSibling)
+        } else {
+          el.parentNode?.insertBefore(draggedItem, el)
+        }
+        updateRankNumbers()
+      }
+    })
+  })
+}
+
+function updateRankNumbers() {
+  const list = document.querySelector('#candidate-list')
+  if (!list) return
+
+  list.querySelectorAll('.candidate-item').forEach((item, index) => {
+    const rankSpan = item.querySelector('span')
+    if (rankSpan) {
+      rankSpan.textContent = `${index + 1}.`
+    }
+  })
+}
+
+function submitHostVote(app: HTMLDivElement, roomId: string) {
+  if (!state.hostElection || state.hostElection.hasVoted) return
+
+  const list = document.querySelector('#candidate-list')
+  if (!list) return
+
+  // Get rankings in order
+  const rankings: string[] = []
+  list.querySelectorAll('.candidate-item').forEach(item => {
+    const candidateId = item.getAttribute('data-candidate-id')
+    if (candidateId) {
+      rankings.push(candidateId)
+    }
+  })
+
+  // Add ourselves at the end if we're a candidate
+  const me = state.hostElection.candidates.find(c => c.id === state.participantId)
+  if (me) {
+    rankings.push(me.id)
+  }
+
+  // Send vote
+  connection?.send({ type: 'host_vote', rankings })
+
+  // Update UI to show waiting state
+  state.hostElection.hasVoted = true
+  showHostElectionModal(app, roomId)
 }

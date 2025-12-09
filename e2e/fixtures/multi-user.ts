@@ -57,6 +57,12 @@ export interface TestUser {
   expectStatsPanelContains(text: string): Promise<void>
   expectStatsPanelRounds(count: number): Promise<void>
   expectStatsPanelYahtzees(count: number): Promise<void>
+
+  // Host election
+  expectElectionModal(): Promise<void>
+  expectNoElectionModal(): Promise<void>
+  submitElectionVote(rankings?: string[]): Promise<void>
+  expectElectionWaitingState(): Promise<void>
 }
 
 class TestUserImpl implements TestUser {
@@ -202,7 +208,14 @@ class TestUserImpl implements TestUser {
   }
 
   async leaveRoom() {
-    await this.page.click('#blackjack-btn')
+    // Close any modal that might be blocking the button (like election modal)
+    const electionModal = this.page.locator('#election-modal')
+    if (await electionModal.isVisible().catch(() => false)) {
+      // Press escape to dismiss or use force click
+      await this.page.keyboard.press('Escape')
+      await this.page.waitForTimeout(100)
+    }
+    await this.page.click('#blackjack-btn', { force: true })
     await this.page.waitForTimeout(100)
   }
 
@@ -259,6 +272,25 @@ class TestUserImpl implements TestUser {
   async expectStatsPanelYahtzees(count: number) {
     const yahtzeeValue = this.page.locator('#stats-panel .text-center:has-text("Yahtzees") .text-2xl')
     await expect(yahtzeeValue).toHaveText(String(count))
+  }
+
+  async expectElectionModal() {
+    await expect(this.page.locator('#election-modal')).toBeVisible({ timeout: 5000 })
+  }
+
+  async expectNoElectionModal() {
+    await expect(this.page.locator('#election-modal')).not.toBeVisible({ timeout: 10000 })
+  }
+
+  async submitElectionVote(rankings?: string[]) {
+    // If rankings provided, reorder the candidates (not implemented - tests will use default order)
+    // Just click submit
+    await this.page.click('#submit-vote-btn')
+    await this.page.waitForTimeout(100)
+  }
+
+  async expectElectionWaitingState() {
+    await expect(this.page.locator('#election-modal', { hasText: 'Vote submitted!' })).toBeVisible()
   }
 }
 

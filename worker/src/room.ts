@@ -7,6 +7,14 @@ interface Participant {
   color: string
   vote: string | null
   left: boolean
+  joinedAt: number // Timestamp for tiebreaks in host election
+}
+
+// Host election state for ranked choice voting
+interface HostElection {
+  candidates: string[] // Participant IDs eligible to be host
+  votes: Record<string, string[]> // participantId -> ranked list of candidate IDs
+  startedAt: number
 }
 
 interface ChatMessage {
@@ -43,6 +51,7 @@ interface RoomState {
   roundNumber: number
   chat: ChatMessage[]
   stats: SessionStats
+  hostElection: HostElection | null // Active host election (null if not in election)
 }
 
 const ANIMAL_EMOJIS = [
@@ -162,6 +171,34 @@ const ROUND_REVEAL_MESSAGES = [
   '🔮 The crystal ball reveals all!',
 ]
 
+// Host election messages
+const ELECTION_START_MESSAGES = [
+  '👑 The throne is empty! Time to elect a new host.',
+  '🗳️ Democracy time! Vote for your new leader.',
+  '🏛️ The host has abdicated! An election begins.',
+  '⚔️ A power vacuum! Who shall rule?',
+  '🎭 The crown is up for grabs! Cast your votes.',
+  '🗳️ Emergency election! Rank your candidates.',
+  '👑 Succession crisis! Vote for the new host.',
+]
+
+const ELECTION_WINNER_MESSAGES = [
+  '👑 All hail **{name}**, the new host!',
+  '🎉 **{name}** has been elected leader!',
+  '🏆 The people have spoken! **{name}** is your new host.',
+  '👑 Long live **{name}**, ruler of this room!',
+  '🗳️ Democracy has spoken: **{name}** wins!',
+  '✨ **{name}** ascends to the throne!',
+  '🎭 The council has chosen **{name}** as host.',
+]
+
+const ELECTION_AUTO_PROMOTE_MESSAGES = [
+  '👑 **{name}** is now host by default.',
+  '🎭 With no contest, **{name}** takes the crown.',
+  '👑 **{name}** inherits the throne.',
+  '✨ **{name}** becomes host automatically.',
+]
+
 function randomFrom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
 }
@@ -260,6 +297,7 @@ export class RoomDO extends DurableObject {
           yahtzeeCount: 0,
           participantStats: {},
         },
+        hostElection: null,
       }
       // Migration: add chat array if missing
       if (!this.state.chat) {
@@ -276,6 +314,16 @@ export class RoomDO extends DurableObject {
           roundStartTime: now,
           yahtzeeCount: 0,
           participantStats: {},
+        }
+      }
+      // Migration: add hostElection if missing
+      if (this.state.hostElection === undefined) {
+        this.state.hostElection = null
+      }
+      // Migration: add joinedAt to existing participants
+      for (const p of Object.values(this.state.participants)) {
+        if (p.joinedAt === undefined) {
+          p.joinedAt = now
         }
       }
     }
@@ -384,6 +432,7 @@ export class RoomDO extends DurableObject {
             color: requestedColor,
             vote: state.votes[requestedId] || null, // Restore vote from persistent storage
             left: false,
+            joinedAt: Date.now(),
           }
           state.participants[participantId] = participant
           // Not a reconnection - broadcast to others
@@ -401,6 +450,7 @@ export class RoomDO extends DurableObject {
             color,
             vote: null,
             left: false,
+            joinedAt: Date.now(),
           }
 
           state.participants[participantId] = participant
@@ -751,12 +801,59 @@ export class RoomDO extends DurableObject {
         this.broadcast({ type: 'participant_left', participantId })
         this.broadcast({ type: 'chat', message: leaveMessage })
 
+        // If the host left, start an election
+        if (participantId === state.hostId) {
+          state.hostId = null // Clear host while election runs
+          await this.startHostElection(state)
+        } else if (state.hostElection) {
+          // If there's an active election and a candidate left, remove them and recheck
+          const wasCandidate = state.hostElection.candidates.includes(participantId)
+          if (wasCandidate) {
+            state.hostElection.candidates = state.hostElection.candidates.filter(id => id !== participantId)
+            delete state.hostElection.votes[participantId]
+            await this.saveState()
+
+            // Check if only one candidate remains
+            const remainingCandidates = state.hostElection.candidates.filter(id => {
+              const p = state.participants[id]
+              return p && !p.left
+            })
+            if (remainingCandidates.length === 1) {
+              const winner = state.participants[remainingCandidates[0]]
+              await this.promoteToHost(state, winner)
+            } else if (remainingCandidates.length === 0) {
+              // No candidates left - shouldn't happen but handle it
+              state.hostElection = null
+              await this.saveState()
+            } else {
+              // Check if all remaining voters have voted
+              const activeParticipants = Object.values(state.participants).filter(p => !p.left)
+              const allVoted = activeParticipants.every(p => state.hostElection!.votes[p.id]?.length > 0)
+              if (allVoted) {
+                await this.resolveElection(state)
+              }
+            }
+          }
+        }
+
         // Close the connection
         try {
           ws.close(1000, 'User left room')
         } catch {
           // Socket might already be closed
         }
+        break
+      }
+
+      case 'host_vote': {
+        const voterId = this.getParticipantId(ws)
+        if (!voterId) return
+        if (!state.hostElection) return // No active election
+
+        const rankings = data.rankings as string[]
+        if (!Array.isArray(rankings)) return
+
+        await this.recordHostVote(state, voterId, rankings)
         break
       }
 
@@ -1010,5 +1107,232 @@ export class RoomDO extends DurableObject {
         }
       }
     }
+  }
+
+  // Start a host election among active participants
+  private async startHostElection(state: RoomState): Promise<void> {
+    const activeParticipants = Object.values(state.participants).filter(p => !p.left)
+
+    // If only one person left, auto-promote them
+    if (activeParticipants.length === 1) {
+      await this.promoteToHost(state, activeParticipants[0])
+      return
+    }
+
+    // If no one left, clear host
+    if (activeParticipants.length === 0) {
+      state.hostId = null
+      await this.saveState()
+      return
+    }
+
+    // Start election
+    state.hostElection = {
+      candidates: activeParticipants.map(p => p.id),
+      votes: {},
+      startedAt: Date.now(),
+    }
+    await this.saveState()
+
+    // Announce election
+    const electionMessage: ChatMessage = {
+      id: crypto.randomUUID(),
+      participantId: 'system',
+      name: 'System',
+      emoji: '🗳️',
+      color: '#8B5CF6', // Purple
+      text: randomFrom(ELECTION_START_MESSAGES),
+      timestamp: Date.now(),
+    }
+    state.chat.push(electionMessage)
+    if (state.chat.length > 100) {
+      state.chat = state.chat.slice(-100)
+    }
+    await this.saveState()
+
+    // Notify all clients about the election
+    this.broadcast({ type: 'chat', message: electionMessage })
+    this.broadcast({
+      type: 'host_election_started',
+      candidates: activeParticipants.map(p => ({
+        id: p.id,
+        name: p.name,
+        emoji: p.emoji,
+      })),
+    })
+  }
+
+  // Promote a participant to host
+  private async promoteToHost(state: RoomState, participant: Participant): Promise<void> {
+    state.hostId = participant.id
+    state.hostElection = null
+    await this.saveState()
+
+    const message: ChatMessage = {
+      id: crypto.randomUUID(),
+      participantId: 'system',
+      name: 'System',
+      emoji: '👑',
+      color: '#F59E0B', // Amber
+      text: randomFrom(ELECTION_AUTO_PROMOTE_MESSAGES).replace('{name}', participant.name),
+      timestamp: Date.now(),
+    }
+    state.chat.push(message)
+    if (state.chat.length > 100) {
+      state.chat = state.chat.slice(-100)
+    }
+    await this.saveState()
+
+    this.broadcast({ type: 'chat', message })
+    this.broadcast({ type: 'host_changed', hostId: participant.id })
+  }
+
+  // Record a vote and check if election is complete
+  private async recordHostVote(state: RoomState, voterId: string, rankings: string[]): Promise<void> {
+    if (!state.hostElection) return
+
+    // Validate rankings - must be valid candidates
+    const validCandidates = new Set(state.hostElection.candidates)
+    const validRankings = rankings.filter(id => validCandidates.has(id))
+
+    state.hostElection.votes[voterId] = validRankings
+    await this.saveState()
+
+    // Check if all eligible voters have voted
+    const activeParticipants = Object.values(state.participants).filter(p => !p.left)
+    const allVoted = activeParticipants.every(p => state.hostElection!.votes[p.id]?.length > 0)
+
+    if (allVoted) {
+      await this.resolveElection(state)
+    } else {
+      // Notify about vote progress
+      const votedCount = Object.keys(state.hostElection.votes).length
+      this.broadcast({
+        type: 'host_election_progress',
+        votedCount,
+        totalVoters: activeParticipants.length,
+      })
+    }
+  }
+
+  // Run instant-runoff voting to determine winner
+  private async resolveElection(state: RoomState): Promise<void> {
+    if (!state.hostElection) return
+
+    const activeParticipants = Object.values(state.participants).filter(p => !p.left)
+    let remainingCandidates = new Set(state.hostElection.candidates.filter(id => {
+      const p = state.participants[id]
+      return p && !p.left
+    }))
+
+    // Clone votes for manipulation
+    const votes = Object.entries(state.hostElection.votes).map(([voterId, rankings]) => ({
+      voterId,
+      rankings: [...rankings],
+    }))
+
+    // Run instant-runoff rounds
+    while (remainingCandidates.size > 1) {
+      // Count first-choice votes
+      const counts: Record<string, number> = {}
+      for (const candidate of remainingCandidates) {
+        counts[candidate] = 0
+      }
+
+      for (const vote of votes) {
+        // Find first remaining candidate in this voter's rankings
+        const firstChoice = vote.rankings.find(id => remainingCandidates.has(id))
+        if (firstChoice) {
+          counts[firstChoice]++
+        }
+      }
+
+      // Check for majority winner (>50%)
+      const totalVotes = votes.length
+      for (const [candidateId, count] of Object.entries(counts)) {
+        if (count > totalVotes / 2) {
+          // Winner found!
+          const winner = state.participants[candidateId]
+          await this.declareElectionWinner(state, winner)
+          return
+        }
+      }
+
+      // No majority - eliminate candidate with fewest votes
+      // On tie, eliminate the one who joined most recently (oldest participant survives)
+      let minVotes = Infinity
+      let toEliminate: string | null = null
+
+      for (const [candidateId, count] of Object.entries(counts)) {
+        if (count < minVotes) {
+          minVotes = count
+          toEliminate = candidateId
+        } else if (count === minVotes && toEliminate) {
+          // Tiebreak: eliminate the newer participant (higher joinedAt)
+          const currentCandidate = state.participants[candidateId]
+          const eliminateCandidate = state.participants[toEliminate]
+          if (currentCandidate.joinedAt > eliminateCandidate.joinedAt) {
+            toEliminate = candidateId
+          }
+        }
+      }
+
+      if (toEliminate) {
+        remainingCandidates.delete(toEliminate)
+        // Remove from rankings
+        for (const vote of votes) {
+          vote.rankings = vote.rankings.filter(id => id !== toEliminate)
+        }
+      } else {
+        break // Safety valve
+      }
+    }
+
+    // Last candidate standing wins
+    if (remainingCandidates.size === 1) {
+      const winnerId = [...remainingCandidates][0]
+      const winner = state.participants[winnerId]
+      await this.declareElectionWinner(state, winner)
+    } else if (remainingCandidates.size > 1) {
+      // Final tiebreak - oldest participant wins
+      const candidates = [...remainingCandidates].map(id => state.participants[id])
+      candidates.sort((a, b) => a.joinedAt - b.joinedAt)
+      await this.declareElectionWinner(state, candidates[0])
+    } else {
+      // No candidates left? Pick oldest active participant
+      activeParticipants.sort((a, b) => a.joinedAt - b.joinedAt)
+      if (activeParticipants.length > 0) {
+        await this.promoteToHost(state, activeParticipants[0])
+      }
+    }
+  }
+
+  // Declare election winner
+  private async declareElectionWinner(state: RoomState, winner: Participant): Promise<void> {
+    state.hostId = winner.id
+    state.hostElection = null
+    await this.saveState()
+
+    const message: ChatMessage = {
+      id: crypto.randomUUID(),
+      participantId: 'system',
+      name: 'System',
+      emoji: '👑',
+      color: '#22C55E', // Green
+      text: randomFrom(ELECTION_WINNER_MESSAGES).replace('{name}', winner.name),
+      timestamp: Date.now(),
+    }
+    state.chat.push(message)
+    if (state.chat.length > 100) {
+      state.chat = state.chat.slice(-100)
+    }
+    await this.saveState()
+
+    this.broadcast({ type: 'chat', message })
+    this.broadcast({
+      type: 'host_election_ended',
+      winnerId: winner.id,
+      hostId: winner.id,
+    })
   }
 }
