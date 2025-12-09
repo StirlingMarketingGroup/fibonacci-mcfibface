@@ -117,63 +117,6 @@ test.describe('Host Controls', () => {
     await alice.expectRoundNumber(3)
   })
 
-  test('host transfer works when host leaves', async ({ createUsers }) => {
-    const [alice, bob, charlie] = await createUsers(3)
-
-    const roomUrl = await alice.createRoom()
-    await bob.goto(roomUrl)
-    await bob.joinRoom()
-    await charlie.goto(roomUrl)
-    await charlie.joinRoom()
-
-    // Alice is host
-    await alice.expectIsHost()
-    await bob.expectIsNotHost()
-    await charlie.expectIsNotHost()
-
-    // Alice leaves
-    await alice.disconnect()
-    await bob.page.waitForTimeout(500)
-
-    // Bob should become host
-    await bob.expectIsHost()
-    await charlie.expectIsNotHost()
-
-    // Bob can use host controls
-    await bob.vote('5')
-    await charlie.vote('8')
-    await bob.expectRevealed()
-
-    await bob.resetRound()
-    await bob.expectRoundNumber(2)
-  })
-
-  test('new host transfer after second host leaves', async ({ createUsers }) => {
-    const [alice, bob, charlie] = await createUsers(3)
-
-    const roomUrl = await alice.createRoom()
-    await bob.goto(roomUrl)
-    await bob.joinRoom()
-    await charlie.goto(roomUrl)
-    await charlie.joinRoom()
-
-    // Alice leaves - Bob becomes host
-    await alice.disconnect()
-    await bob.page.waitForTimeout(500)
-    await bob.expectIsHost()
-
-    // Bob leaves - Charlie becomes host
-    await bob.disconnect()
-    await charlie.page.waitForTimeout(500)
-    await charlie.expectIsHost()
-
-    // Charlie can reset
-    await charlie.vote('5')
-    await charlie.expectRevealed()
-    await charlie.resetRound()
-    await charlie.expectRoundNumber(2)
-  })
-
   test('reset clears my vote selection UI', async ({ createUsers }) => {
     const [alice, bob] = await createUsers(2)
 

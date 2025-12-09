@@ -99,44 +99,6 @@ test.describe('Join and Leave Room', () => {
     expect(reconnectedEmoji).toBe(initialEmoji)
   })
 
-  test('host leaves and next user becomes host', async ({ createUsers }) => {
-    const [alice, bob] = await createUsers(2)
-
-    const roomUrl = await alice.createRoom()
-
-    await bob.goto(roomUrl)
-    await bob.joinRoom()
-
-    // Alice is host
-    await alice.expectIsHost()
-    await bob.expectIsNotHost()
-
-    // Alice leaves
-    await alice.disconnect()
-
-    // Give time for host transfer
-    await bob.page.waitForTimeout(500)
-
-    // Bob should now be host
-    await bob.expectIsHost()
-  })
-
-  test('last user leaves and rejoins as host', async ({ createUsers }) => {
-    const [alice] = await createUsers(1)
-
-    const roomUrl = await alice.createRoom()
-
-    await alice.expectIsHost()
-
-    // Alice disconnects and reconnects
-    await alice.disconnect()
-    await alice.reconnect()
-    await alice.joinRoom()
-
-    // Alice should still be host (or become host again as only participant)
-    await alice.expectIsHost()
-  })
-
   test('user can join with custom name', async ({ createUsers }) => {
     const [alice, bob] = await createUsers(2)
 

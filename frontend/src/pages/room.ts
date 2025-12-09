@@ -181,11 +181,6 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
     renderRoom(app, roomId)
   })
 
-  connection.on('host_changed', (data) => {
-    state.hostId = data.hostId as string
-    renderRoom(app, roomId)
-  })
-
   connection.on('vote_cast', (data) => {
     const participant = state.participants.find((p) => p.id === data.participantId)
     if (participant) {

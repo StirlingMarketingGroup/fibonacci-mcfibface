@@ -253,36 +253,6 @@ test.describe('Stress Tests', () => {
     await charlie.expectRevealed()
   })
 
-  test('host leaves during voting, new host can reset', async ({ createUsers }) => {
-    const [alice, bob, charlie] = await createUsers(3)
-
-    const roomUrl = await alice.createRoom()
-    await bob.goto(roomUrl)
-    await bob.joinRoom()
-    await charlie.goto(roomUrl)
-    await charlie.joinRoom()
-
-    // Start voting
-    await alice.vote('5')
-    await bob.vote('8')
-
-    // Alice (host) leaves before Charlie votes
-    await alice.disconnect()
-    await bob.page.waitForTimeout(500)
-
-    // Bob should be new host
-    await bob.expectIsHost()
-
-    // Charlie votes, triggering reveal
-    await charlie.vote('13')
-    await bob.expectRevealed()
-
-    // Bob (new host) can reset
-    await bob.resetRound()
-    await bob.expectRoundNumber(2)
-    await charlie.expectRoundNumber(2)
-  })
-
   test('all users disconnect except one', async ({ createUsers }) => {
     const [alice, bob, charlie] = await createUsers(3)
 

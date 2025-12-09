@@ -151,16 +151,6 @@ export class RoomDO extends DurableObject {
       await this.saveState()
 
       this.broadcast({ type: 'participant_left', participantId })
-
-      // If host left, assign new host
-      if (state.hostId === participantId) {
-        const participantIds = Object.keys(state.participants)
-        state.hostId = participantIds[0] || null
-        await this.saveState()
-        if (state.hostId) {
-          this.broadcast({ type: 'host_changed', hostId: state.hostId })
-        }
-      }
     }
   }
 
