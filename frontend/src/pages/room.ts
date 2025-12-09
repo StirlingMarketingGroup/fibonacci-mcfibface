@@ -388,7 +388,18 @@ function appendChatMessage(message: ChatMessage) {
   }
 
   chatMessages.appendChild(div)
-  chatMessages.scrollTop = chatMessages.scrollHeight
+
+  const scrollToBottom = () => {
+    chatMessages.scrollTop = chatMessages.scrollHeight
+  }
+
+  // Scroll immediately for text content
+  scrollToBottom()
+
+  // Also scroll when any images in the message finish loading
+  div.querySelectorAll('img').forEach((img) => {
+    img.addEventListener('load', scrollToBottom)
+  })
 }
 
 function escapeHtml(text: string): string {
