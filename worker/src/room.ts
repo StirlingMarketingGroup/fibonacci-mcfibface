@@ -107,6 +107,44 @@ const CONSENSUS_MESSAGES = [
   '🌟 **LEGENDARY!** Perfect agreement on **{vote}**',
 ]
 
+// Vote cast messages - {name} will be replaced with the voter's name
+const VOTE_CAST_MESSAGES = [
+  '**{name}** has spoken.',
+  '**{name}** made up their mind.',
+  '**{name}** locked it in. 🔒',
+  '**{name}** cast their vote into the void.',
+  '**{name}** has decided.',
+  '**{name}** threw their hat in the ring.',
+  '**{name}** submitted their estimate.',
+  '**{name}** is ready.',
+  '**{name}** made their choice.',
+  '**{name}** committed. No take-backsies!',
+]
+
+// Round reset/start messages - {round} will be replaced with round number
+const ROUND_START_MESSAGES = [
+  '🎲 **Round {round}!** Place your bets.',
+  '🆕 Fresh slate for Round {round}. Who dis?',
+  '🔄 Round {round} begins! May the odds be ever in your favor.',
+  '✨ New round, new chances! Round {round} is live.',
+  '🎬 And... action! Round {round} starts now.',
+  '🚀 Round {round} has launched!',
+  '🎪 Step right up! Round {round} is open for business.',
+  '⚡ Round {round} activated. Estimate away!',
+]
+
+// Round reveal messages
+const ROUND_REVEAL_MESSAGES = [
+  '🎭 The votes are in!',
+  '🥁 Drumroll please...',
+  '👀 Let\'s see what we\'ve got!',
+  '🔓 Revealing all votes!',
+  '📊 And the results are...',
+  '🎪 The moment of truth!',
+  '✨ Behold! The estimates!',
+  '🔮 The crystal ball reveals all!',
+]
+
 function randomFrom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
 }
@@ -381,11 +419,31 @@ export class RoomDO extends DurableObject {
         const participant = state.participants[participantId]
         if (!participant || state.revealed) return
 
+        const hadVoteBefore = participant.vote !== null
         participant.vote = data.vote as string
         state.votes[participantId] = data.vote as string // Persist vote separately
         await this.saveState()
 
         this.broadcast({ type: 'vote_cast', participantId, hasVoted: true })
+
+        // Send vote cast message only for first vote (not vote changes)
+        if (!hadVoteBefore) {
+          const voteMessage: ChatMessage = {
+            id: crypto.randomUUID(),
+            participantId: 'system',
+            name: 'System',
+            emoji: '🗳️',
+            color: '#6366F1', // Indigo
+            text: randomFrom(VOTE_CAST_MESSAGES).replace('{name}', participant.name),
+            timestamp: Date.now(),
+          }
+          state.chat.push(voteMessage)
+          if (state.chat.length > 100) {
+            state.chat = state.chat.slice(-100)
+          }
+          await this.saveState()
+          this.broadcast({ type: 'chat', message: voteMessage })
+        }
 
         // Check if everyone has voted (only consider active, non-left participants)
         const activeParticipants = Object.values(state.participants).filter(p => !p.left)
@@ -394,6 +452,23 @@ export class RoomDO extends DurableObject {
         if (allVoted && activeParticipants.length > 0) {
           state.revealed = true
           await this.saveState()
+
+          // Send reveal message
+          const revealMessage: ChatMessage = {
+            id: crypto.randomUUID(),
+            participantId: 'system',
+            name: 'System',
+            emoji: '🎭',
+            color: '#F59E0B', // Amber
+            text: randomFrom(ROUND_REVEAL_MESSAGES),
+            timestamp: Date.now(),
+          }
+          state.chat.push(revealMessage)
+          if (state.chat.length > 100) {
+            state.chat = state.chat.slice(-100)
+          }
+          await this.saveState()
+          this.broadcast({ type: 'chat', message: revealMessage })
 
           this.broadcast({
             type: 'reveal',
@@ -443,6 +518,23 @@ export class RoomDO extends DurableObject {
         await this.saveState()
 
         this.broadcast({ type: 'round_reset', roundNumber: state.roundNumber })
+
+        // Send round start message
+        const roundMessage: ChatMessage = {
+          id: crypto.randomUUID(),
+          participantId: 'system',
+          name: 'System',
+          emoji: '🎲',
+          color: '#10B981', // Emerald
+          text: randomFrom(ROUND_START_MESSAGES).replace('{round}', String(state.roundNumber)),
+          timestamp: Date.now(),
+        }
+        state.chat.push(roundMessage)
+        if (state.chat.length > 100) {
+          state.chat = state.chat.slice(-100)
+        }
+        await this.saveState()
+        this.broadcast({ type: 'chat', message: roundMessage })
         break
       }
 

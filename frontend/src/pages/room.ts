@@ -43,6 +43,45 @@ interface RoomState {
 
 const POINT_VALUES = ['.5', '1', '2', '3', '5', '8', '13', '20', '40', '100', '?', '☕', '🦆']
 
+// Slash commands - maps command to replacement text
+const SLASH_COMMANDS: Record<string, string> = {
+  '/shrug': '¯\\_(ツ)_/¯',
+  '/tableflip': '(╯°□°)╯︵ ┻━┻',
+  '/unflip': '┬─┬ノ( º _ ºノ)',
+  '/disapprove': 'ಠ_ಠ',
+  '/lenny': '( ͡° ͜ʖ ͡°)',
+  '/fight': '(ง\'̀-\'́)ง',
+  '/magic': '(ﾉ◕ヮ◕)ﾉ*:・ﾟ✧',
+  '/sparkles': '✧･ﾟ: *✧･ﾟ:*',
+  '/bear': 'ʕ•ᴥ•ʔ',
+  '/hi': '(◕‿◕)ノ',
+  '/cry': '(╥﹏╥)',
+  '/what': '(⊙_⊙)?',
+  '/cool': '(⌐■_■)',
+  '/deal': '(•_•) ( •_•)>⌐■-■ (⌐■_■)',
+  '/flex': 'ᕦ(ò_óˇ)ᕤ',
+  '/run': 'ε=ε=ε=┌(;*´Д`)ノ',
+  '/hug': '(づ｡◕‿‿◕｡)づ',
+  '/zzz': '(-.-)zzZ',
+  '/dance': '┏(・o・)┛♪┗ (・o・) ┓♪',
+  '/help': '**Slash commands:** /shrug /tableflip /unflip /disapprove /lenny /fight /magic /sparkles /bear /hi /cry /what /cool /deal /flex /run /hug /zzz /dance',
+}
+
+function processSlashCommand(text: string): string {
+  const trimmed = text.trim()
+  // Check if the entire message is a slash command
+  if (SLASH_COMMANDS[trimmed]) {
+    return SLASH_COMMANDS[trimmed]
+  }
+  // Check if the message starts with a slash command followed by space or end
+  for (const [cmd, replacement] of Object.entries(SLASH_COMMANDS)) {
+    if (trimmed === cmd || trimmed.startsWith(cmd + ' ')) {
+      return trimmed.replace(cmd, replacement)
+    }
+  }
+  return text
+}
+
 function fireConfetti() {
   const duration = 3000
   const end = Date.now() + duration
@@ -339,14 +378,44 @@ function escapeHtml(text: string): string {
   return div.innerHTML
 }
 
+// Valid effects for stackable syntax
+const VALID_EFFECTS = new Set([
+  'rainbow', 'shake', 'glow', 'party', 'wave', 'scroll', 'flash', 'slide',
+  'red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple', 'pink', 'white'
+])
+
+function processStackableEffects(text: string): string {
+  // Match pattern: effect:effect:...:text (effects are alphanumeric, text is anything after last colon)
+  // Example: wave:glow:cyan:buying gf
+  const match = text.match(/^((?:[a-z]+:)+)(.+)$/i)
+  if (!match) return text
+
+  const effectsPart = match[1] // "wave:glow:cyan:"
+  const textPart = match[2]    // "buying gf"
+
+  const effects = effectsPart.slice(0, -1).split(':') // Remove trailing colon and split
+  const validEffects = effects.filter(e => VALID_EFFECTS.has(e.toLowerCase()))
+
+  if (validEffects.length === 0) return text
+
+  const classes = validEffects.map(e => `effect-${e.toLowerCase()}`).join(' ')
+  return `<span class="${classes}">${textPart}</span>`
+}
+
 function renderMarkdown(text: string): string {
-  // Process text effects first (before markdown)
-  // Syntax: !effect text here! where effect is rainbow, shake, glow, or party
-  let processed = text
+  // Process stackable effects first (RuneScape style: effect:effect:text)
+  let processed = processStackableEffects(text)
+
+  // Also support legacy syntax: !effect text! (for backwards compatibility)
+  processed = processed
     .replace(/!rainbow ([^!]+)!/g, '<span class="effect-rainbow">$1</span>')
     .replace(/!shake ([^!]+)!/g, '<span class="effect-shake">$1</span>')
     .replace(/!glow ([^!]+)!/g, '<span class="effect-glow">$1</span>')
     .replace(/!party ([^!]+)!/g, '<span class="effect-party">$1</span>')
+    .replace(/!wave ([^!]+)!/g, '<span class="effect-wave">$1</span>')
+    .replace(/!flash ([^!]+)!/g, '<span class="effect-flash">$1</span>')
+    .replace(/!scroll ([^!]+)!/g, '<span class="effect-scroll">$1</span>')
+    .replace(/!slide ([^!]+)!/g, '<span class="effect-slide">$1</span>')
 
   // Convert GIF URLs to inline images (common GIF hosts)
   processed = processed.replace(
@@ -521,11 +590,12 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
                   <div><span class="text-gray-400">*italic*</span> → <em>italic</em></div>
                   <div><span class="text-gray-400">\`code\`</span> → <code class="bg-gray-700 px-1 rounded">code</code></div>
                   <div><span class="text-gray-400">~~strike~~</span> → <del>strike</del></div>
-                  <div class="font-bold text-white mt-3 mb-2">Text Effects</div>
-                  <div><span class="text-gray-400">!rainbow text!</span> → <span class="effect-rainbow">rainbow</span></div>
-                  <div><span class="text-gray-400">!shake text!</span> → <span class="effect-shake">shake</span></div>
-                  <div><span class="text-gray-400">!glow text!</span> → <span class="effect-glow">glow</span></div>
-                  <div><span class="text-gray-400">!party text!</span> → <span class="effect-party">party</span></div>
+                  <div class="font-bold text-white mt-3 mb-2">Text Effects (stackable!)</div>
+                  <div><span class="text-gray-400">wave:glow:cyan:text</span></div>
+                  <div class="text-gray-500 text-[10px]">rainbow, shake, glow, party, wave, scroll, flash, slide</div>
+                  <div class="text-gray-500 text-[10px]">Colors: red, orange, yellow, green, cyan, blue, purple, pink</div>
+                  <div class="font-bold text-white mt-3 mb-2">Slash Commands</div>
+                  <div class="text-gray-400">/shrug /tableflip /lenny /help</div>
                   <div class="font-bold text-white mt-3 mb-2">Stickers</div>
                   <div class="text-gray-400">Paste any .gif URL</div>
                 </div>
@@ -634,8 +704,9 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
     chatInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
-        const text = chatInput.value.trim()
-        if (text) {
+        const rawText = chatInput.value.trim()
+        if (rawText) {
+          const text = processSlashCommand(rawText)
           const sent = connection?.send({ type: 'chat', text })
           if (sent) {
             chatInput.value = ''

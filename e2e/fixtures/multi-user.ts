@@ -141,11 +141,11 @@ class TestUserImpl implements TestUser {
   }
 
   async expectRevealed() {
-    await expect(this.page.locator('text=Results')).toBeVisible({ timeout: 5000 })
+    await expect(this.page.locator('h2:has-text("Results")')).toBeVisible({ timeout: 5000 })
   }
 
   async expectNotRevealed() {
-    await expect(this.page.locator('text=Results')).not.toBeVisible()
+    await expect(this.page.locator('h2:has-text("Results")')).not.toBeVisible()
   }
 
   async expectVoteValue(name: string, value: string) {
@@ -168,7 +168,7 @@ class TestUserImpl implements TestUser {
   }
 
   async expectRoundNumber(num: number) {
-    await expect(this.page.locator(`text=Round ${num}`)).toBeVisible()
+    await expect(this.page.locator(`h1:has-text("Round ${num}")`)).toBeVisible()
   }
 
   async expectChatMessage(senderName: string, text: string) {
