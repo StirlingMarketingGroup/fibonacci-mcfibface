@@ -62,7 +62,7 @@ const STICKERS: Record<string, { url: string; alt: string }> = {
 
 // Slash commands - maps command to replacement text
 const SLASH_COMMANDS: Record<string, string> = {
-  '/shrug': '¯\\_(ツ)_/¯',
+  '/shrug': '¯\\\\_(ツ)_/¯',
   '/tableflip': '(╯°□°)╯︵ ┻━┻',
   '/unflip': '┬─┬ノ( º _ ºノ)',
   '/disapprove': 'ಠ_ಠ',
