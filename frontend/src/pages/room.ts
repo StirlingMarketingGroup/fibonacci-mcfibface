@@ -486,7 +486,7 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
           `).join('')}
         </div>
         <div class="p-3 border-t border-gray-700">
-          <div class="flex gap-2 items-end">
+          <div class="flex gap-2 items-start">
             <textarea
               id="chat-input"
               placeholder="Send a message"
@@ -495,7 +495,7 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
               class="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 resize-none overflow-hidden"
               style="min-height: 38px; max-height: 120px;"
             ></textarea>
-            <div class="relative group">
+            <div class="relative group flex items-center" style="height: 38px;">
               <button type="button" class="w-6 h-6 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-white text-xs font-bold flex items-center justify-center">?</button>
               <div class="absolute bottom-8 right-0 w-64 p-3 bg-gray-800 border border-gray-600 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
                 <div class="text-xs text-gray-300 space-y-2">
