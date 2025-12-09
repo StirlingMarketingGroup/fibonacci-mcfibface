@@ -53,6 +53,7 @@ interface RoomState {
   roundNumber: number
   myVote: string | null
   chat: ChatMessage[]
+  sessionStats: SessionStats | null
 }
 
 const POINT_VALUES = ['.5', '1', '2', '3', '5', '8', '13', '20', '40', '100', '?', '☕', '🦆']
@@ -153,6 +154,7 @@ let state: RoomState = {
   roundNumber: 1,
   myVote: null,
   chat: [],
+  sessionStats: null,
 }
 
 export function renderRoomPage(roomId: string) {
@@ -286,6 +288,8 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
         participant.vote = v.vote
       }
     })
+    // Request session stats to display in results
+    connection?.send({ type: 'get_stats' })
     renderRoom(app, roomId)
   })
 
@@ -293,6 +297,7 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
     state.revealed = false
     state.roundNumber = data.roundNumber as number
     state.myVote = null
+    state.sessionStats = null // Clear stats on new round
     state.participants.forEach((p) => (p.vote = null))
     renderRoom(app, roomId)
   })
@@ -369,7 +374,14 @@ async function connectToRoom(app: HTMLDivElement, roomId: string, name: string) 
 
   connection.on('stats', (data) => {
     const stats = data.stats as SessionStats
-    showStatsPanel(stats)
+    // If revealed, store stats and re-render to show inline
+    // Otherwise show the modal (when clicking the stats button)
+    if (state.revealed) {
+      state.sessionStats = stats
+      renderRoom(app, roomId)
+    } else {
+      showStatsPanel(stats)
+    }
   })
 
   try {
@@ -881,6 +893,55 @@ function renderParticipantCard(participant: Participant, isCurrentUserHost: bool
   `
 }
 
+function renderSessionAwards(): string {
+  const stats = state.sessionStats
+  if (!stats) return ''
+
+  const awards: string[] = []
+
+  if (stats.fastestVoter) {
+    awards.push(`<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"><span>⚡</span><span class="text-yellow-400">${stats.fastestVoter.emoji} ${stats.fastestVoter.name}</span><span class="text-gray-400">${formatTime(stats.fastestVoter.avgMs)}</span></span>`)
+  }
+
+  if (stats.slowestVoter && stats.slowestVoter.name !== stats.fastestVoter?.name) {
+    awards.push(`<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"><span>🐢</span><span class="text-blue-400">${stats.slowestVoter.emoji} ${stats.slowestVoter.name}</span><span class="text-gray-400">${formatTime(stats.slowestVoter.avgMs)}</span></span>`)
+  }
+
+  if (stats.mostConsensus && stats.mostConsensus.rate > 0) {
+    awards.push(`<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"><span>🤝</span><span class="text-green-400">${stats.mostConsensus.emoji} ${stats.mostConsensus.name}</span><span class="text-gray-400">${Math.round(stats.mostConsensus.rate * 100)}%</span></span>`)
+  }
+
+  if (stats.leastConsensus && stats.leastConsensus.name !== stats.mostConsensus?.name && stats.leastConsensus.rate < 1) {
+    awards.push(`<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"><span>🎭</span><span class="text-purple-400">${stats.leastConsensus.emoji} ${stats.leastConsensus.name}</span><span class="text-gray-400">${Math.round(stats.leastConsensus.rate * 100)}%</span></span>`)
+  }
+
+  if (stats.chaosAgent && stats.chaosAgent.count > 0) {
+    awards.push(`<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"><span>🦆</span><span class="text-orange-400">${stats.chaosAgent.emoji} ${stats.chaosAgent.name}</span><span class="text-gray-400">${stats.chaosAgent.count}x</span></span>`)
+  }
+
+  if (stats.highestAvg) {
+    awards.push(`<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"><span>📈</span><span class="text-red-400">${stats.highestAvg.emoji} ${stats.highestAvg.name}</span><span class="text-gray-400">avg ${stats.highestAvg.avg.toFixed(1)}</span></span>`)
+  }
+
+  if (stats.lowestAvg && stats.lowestAvg.name !== stats.highestAvg?.name) {
+    awards.push(`<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"><span>🎯</span><span class="text-cyan-400">${stats.lowestAvg.emoji} ${stats.lowestAvg.name}</span><span class="text-gray-400">avg ${stats.lowestAvg.avg.toFixed(1)}</span></span>`)
+  }
+
+  if (awards.length === 0) return ''
+
+  return `
+    <div class="mt-4 pt-4 border-t border-gray-700">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="text-sm font-bold text-gray-300">🏆 Session Awards</span>
+        <span class="text-xs text-gray-500">${stats.totalRounds} round${stats.totalRounds !== 1 ? 's' : ''} · ${stats.yahtzeeCount} yahtzee${stats.yahtzeeCount !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        ${awards.join('')}
+      </div>
+    </div>
+  `
+}
+
 function renderStats(): string {
   const numericVotes = state.participants
     .map((p) => parseFloat(p.vote || ''))
@@ -925,6 +986,7 @@ function renderStats(): string {
           🎉 Consensus!
         </div>
       ` : ''}
+      ${renderSessionAwards()}
     </div>
   `
 }

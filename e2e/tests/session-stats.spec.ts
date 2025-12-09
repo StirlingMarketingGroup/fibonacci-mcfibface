@@ -1,7 +1,7 @@
 import { test, expect } from '../fixtures/multi-user'
 
 test.describe('Session Stats', () => {
-  test('can open and close stats panel', async ({ createUsers }) => {
+  test('can open and close stats panel when not revealed', async ({ createUsers }) => {
     const [alice] = await createUsers(1)
 
     await alice.createRoom()
@@ -11,7 +11,7 @@ test.describe('Session Stats', () => {
     await expect(alice.page.locator('#stats-panel')).not.toBeVisible()
   })
 
-  test('shows round count after completing rounds', async ({ createUsers }) => {
+  test('shows session awards inline after reveal', async ({ createUsers }) => {
     const [alice, bob] = await createUsers(2)
 
     const roomUrl = await alice.createRoom()
@@ -23,18 +23,13 @@ test.describe('Session Stats', () => {
     await bob.vote('8')
     await alice.expectRevealed()
 
-    // Reset for round 2
-    await alice.resetRound()
-    await alice.vote('3')
-    await bob.vote('3')
-    await alice.expectRevealed()
-
-    // Check stats
-    await alice.openStats()
-    await alice.expectStatsPanelRounds(2)
+    // Wait for stats to load and show inline
+    await expect(alice.page.locator('text=Session Awards')).toBeVisible({ timeout: 5000 })
+    // Should show round count
+    await expect(alice.page.locator('text=1 round')).toBeVisible()
   })
 
-  test('tracks yahtzee count', async ({ createUsers }) => {
+  test('shows round and yahtzee count inline', async ({ createUsers }) => {
     const [alice, bob] = await createUsers(2)
 
     const roomUrl = await alice.createRoom()
@@ -47,10 +42,9 @@ test.describe('Session Stats', () => {
     await alice.expectRevealed()
     await alice.expectConsensus()
 
-    // Check stats
-    await alice.openStats()
-    await alice.expectStatsPanelYahtzees(1)
-    await alice.closeStats()
+    // Check inline stats
+    await expect(alice.page.locator('text=Session Awards')).toBeVisible({ timeout: 5000 })
+    await expect(alice.page.locator('text=1 yahtzee')).toBeVisible()
 
     // Reset and do another yahtzee
     await alice.resetRound()
@@ -58,30 +52,13 @@ test.describe('Session Stats', () => {
     await bob.vote('8')
     await alice.expectRevealed()
 
-    await alice.openStats()
-    await alice.expectStatsPanelYahtzees(2)
+    // Check updated inline stats
+    await expect(alice.page.locator('text=Session Awards')).toBeVisible({ timeout: 5000 })
+    await expect(alice.page.locator('text=2 yahtzees')).toBeVisible()
+    await expect(alice.page.locator('text=2 rounds')).toBeVisible()
   })
 
-  test('shows awards after multiple rounds', async ({ createUsers }) => {
-    const [alice, bob] = await createUsers(2)
-
-    const roomUrl = await alice.createRoom()
-    await bob.goto(roomUrl)
-    await bob.joinRoom()
-
-    // Complete a round
-    await alice.vote('5')
-    await bob.vote('8')
-    await alice.expectRevealed()
-
-    // Check stats - should show at least duration and rounds
-    await alice.openStats()
-    await alice.expectStatsPanelContains('Session Stats')
-    await alice.expectStatsPanelContains('Rounds')
-    await alice.expectStatsPanelContains('Duration')
-  })
-
-  test('tracks chaos agent award', async ({ createUsers }) => {
+  test('tracks chaos agent award inline', async ({ createUsers }) => {
     const [alice, bob] = await createUsers(2)
 
     const roomUrl = await alice.createRoom()
@@ -93,13 +70,31 @@ test.describe('Session Stats', () => {
     await bob.vote('5')
     await alice.expectRevealed()
 
-    // Check stats - Alice should get Chaos Agent
-    await alice.openStats()
-    await alice.expectStatsPanelContains('Chaos Agent')
-    await alice.expectStatsPanelContains('Alice')
+    // Check inline stats - Alice should get Chaos Agent (shown as orange text with duck)
+    await expect(alice.page.locator('text=Session Awards')).toBeVisible({ timeout: 5000 })
+    // Look for the chaos agent award with Alice's name in orange
+    await expect(alice.page.locator('.text-orange-400', { hasText: 'Alice' })).toBeVisible()
   })
 
-  test('closes panel with escape key', async ({ createUsers }) => {
+  test('shows speed awards inline', async ({ createUsers }) => {
+    const [alice, bob] = await createUsers(2)
+
+    const roomUrl = await alice.createRoom()
+    await bob.goto(roomUrl)
+    await bob.joinRoom()
+
+    // Complete a round
+    await alice.vote('5')
+    await bob.vote('8')
+    await alice.expectRevealed()
+
+    // Check inline stats - should show speed awards
+    await expect(alice.page.locator('text=Session Awards')).toBeVisible({ timeout: 5000 })
+    // Should have at least the speed demon award (⚡)
+    await expect(alice.page.locator('.bg-gray-800 >> text=⚡')).toBeVisible()
+  })
+
+  test('closes panel with escape key when opened manually', async ({ createUsers }) => {
     const [alice] = await createUsers(1)
 
     await alice.createRoom()
@@ -111,7 +106,7 @@ test.describe('Session Stats', () => {
     await expect(alice.page.locator('#stats-panel')).not.toBeVisible()
   })
 
-  test('closes panel by clicking backdrop', async ({ createUsers }) => {
+  test('closes panel by clicking backdrop when opened manually', async ({ createUsers }) => {
     const [alice] = await createUsers(1)
 
     await alice.createRoom()
