@@ -23,6 +23,7 @@ interface ChatMessage {
   id: string
   participantId: string
   name: string
+  emoji: string
   color: string
   text: string
   timestamp: number
@@ -309,7 +310,7 @@ function appendChatMessage(message: ChatMessage) {
 
   const div = document.createElement('div')
   div.className = 'text-sm py-1'
-  div.innerHTML = `<span style="color: ${message.color}" class="font-bold">${escapeHtml(message.name)}</span><span class="text-gray-300">: ${renderMarkdown(message.text)}</span>`
+  div.innerHTML = `<span class="mr-1">${message.emoji || ''}</span><span style="color: ${message.color}" class="font-bold">${escapeHtml(message.name)}</span><span class="text-gray-300">: ${renderMarkdown(message.text)}</span>`
   chatMessages.appendChild(div)
   chatMessages.scrollTop = chatMessages.scrollHeight
 }
@@ -480,7 +481,7 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
         <div id="chat-messages" class="flex-1 p-3 overflow-y-auto space-y-1">
           ${state.chat.map((m) => `
             <div class="text-sm py-1">
-              <span style="color: ${m.color}" class="font-bold">${escapeHtml(m.name)}</span><span class="text-gray-300">: ${renderMarkdown(m.text)}</span>
+              <span class="mr-1">${m.emoji || ''}</span><span style="color: ${m.color}" class="font-bold">${escapeHtml(m.name)}</span><span class="text-gray-300">: ${renderMarkdown(m.text)}</span>
             </div>
           `).join('')}
         </div>

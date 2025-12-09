@@ -12,6 +12,7 @@ interface ChatMessage {
   id: string
   participantId: string
   name: string
+  emoji: string
   color: string
   text: string
   timestamp: number
@@ -297,6 +298,7 @@ export class RoomDO extends DurableObject {
           id: crypto.randomUUID(),
           participantId,
           name: participant.name,
+          emoji: participant.emoji,
           color: participant.color,
           text,
           timestamp: Date.now(),
@@ -347,6 +349,7 @@ export class RoomDO extends DurableObject {
           id: crypto.randomUUID(),
           participantId: 'system',
           name: 'System',
+          emoji: '⚠️',
           color: '#EF4444', // Red
           text: `**${targetName}** was kicked from the room`,
           timestamp: Date.now(),
