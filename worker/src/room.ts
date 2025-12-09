@@ -561,13 +561,6 @@ export class RoomDO extends DurableObject {
           // Track vote time
           const voteTime = Date.now() - state.stats.roundStartTime
           pStats.voteTimesMs.push(voteTime)
-
-          // Track numeric vs chaos votes
-          if (CHAOS_VOTES.has(vote)) {
-            pStats.chaosVotes++
-          } else if (vote in NUMERIC_VOTE_VALUES) {
-            pStats.numericVotes.push(NUMERIC_VOTE_VALUES[vote])
-          }
         }
 
         await this.saveState()
@@ -633,6 +626,21 @@ export class RoomDO extends DurableObject {
 
             // Update consensus stats based on whether each person matched majority
             this.updateConsensusStats(state, activeParticipants)
+
+            // Track final votes for chaos/numeric stats (at reveal, not first vote)
+            for (const p of activeParticipants) {
+              if (!state.stats.participantStats[p.id]) {
+                state.stats.participantStats[p.id] = initParticipantStats()
+              }
+              if (p.vote) {
+                if (CHAOS_VOTES.has(p.vote)) {
+                  state.stats.participantStats[p.id].chaosVotes++
+                } else if (p.vote in NUMERIC_VOTE_VALUES) {
+                  state.stats.participantStats[p.id].numericVotes.push(NUMERIC_VOTE_VALUES[p.vote])
+                }
+              }
+            }
+            await this.saveState()
 
             if (allSame && votes[0] !== null) {
               // Track Yahtzee count
@@ -1086,14 +1094,6 @@ export class RoomDO extends DurableObject {
       await this.saveState()
       this.broadcast({ type: 'chat', message: revealMessage })
 
-      this.broadcast({
-        type: 'reveal',
-        votes: activeParticipants.map(p => ({
-          participantId: p.id,
-          vote: p.vote,
-        })),
-      })
-
       // Check for consensus (everyone voted the same) - only if 2+ participants
       if (activeParticipants.length >= 2) {
         const votes = activeParticipants.map(p => p.vote)
@@ -1101,6 +1101,21 @@ export class RoomDO extends DurableObject {
 
         // Update consensus stats
         this.updateConsensusStats(state, activeParticipants)
+
+        // Track final votes for chaos/numeric stats (at reveal, not first vote)
+        for (const p of activeParticipants) {
+          if (!state.stats.participantStats[p.id]) {
+            state.stats.participantStats[p.id] = initParticipantStats()
+          }
+          if (p.vote) {
+            if (CHAOS_VOTES.has(p.vote)) {
+              state.stats.participantStats[p.id].chaosVotes++
+            } else if (p.vote in NUMERIC_VOTE_VALUES) {
+              state.stats.participantStats[p.id].numericVotes.push(NUMERIC_VOTE_VALUES[p.vote])
+            }
+          }
+        }
+        await this.saveState()
 
         if (allSame && votes[0] !== null) {
           // Track Yahtzee count
@@ -1123,6 +1138,15 @@ export class RoomDO extends DurableObject {
           this.broadcast({ type: 'chat', message: consensusMessage })
         }
       }
+
+      // Send reveal after all stats are tracked (so get_stats requests have fresh data)
+      this.broadcast({
+        type: 'reveal',
+        votes: activeParticipants.map(p => ({
+          participantId: p.id,
+          vote: p.vote,
+        })),
+      })
     }
   }
 
