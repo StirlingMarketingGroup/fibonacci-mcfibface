@@ -30,21 +30,30 @@ export default {
     const roomMatch = url.pathname.match(/^\/room\/([a-zA-Z0-9]+)$/)
     if (roomMatch) {
       const roomId = roomMatch[1]
-      const id = env.ROOMS.idFromName(roomId)
-      const room = env.ROOMS.get(id)
 
-      const response = await room.fetch(request)
+      try {
+        const id = env.ROOMS.idFromName(roomId)
+        const room = env.ROOMS.get(id)
 
-      // Add CORS headers
-      const newHeaders = new Headers(response.headers)
-      newHeaders.set('Access-Control-Allow-Origin', '*')
+        const response = await room.fetch(request)
 
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: newHeaders,
-        webSocket: response.webSocket,
-      })
+        // Add CORS headers
+        const newHeaders = new Headers(response.headers)
+        newHeaders.set('Access-Control-Allow-Origin', '*')
+
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: newHeaders,
+          webSocket: response.webSocket,
+        })
+      } catch (error) {
+        console.error('Error handling room request:', roomId, error)
+        return new Response(`Internal error: ${error}`, {
+          status: 500,
+          headers: { 'Access-Control-Allow-Origin': '*' }
+        })
+      }
     }
 
     return new Response('Not found', { status: 404 })
