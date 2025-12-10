@@ -9,7 +9,3 @@ class_name = "RoomDO"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RoomDO"]
-
-# Keep worker warm with periodic pings (every 5 minutes)
-[triggers]
-crons = ["*/5 * * * *"]

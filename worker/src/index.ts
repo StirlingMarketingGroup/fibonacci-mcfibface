@@ -7,12 +7,6 @@ interface Env {
 }
 
 export default {
-  // Scheduled handler to keep worker warm
-  async scheduled(_event: ScheduledEvent, _env: Env, _ctx: ExecutionContext): Promise<void> {
-    // Just a no-op ping to prevent cold starts
-    console.log('Keepalive ping at', new Date().toISOString())
-  },
-
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
 
