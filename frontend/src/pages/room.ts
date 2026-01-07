@@ -624,6 +624,9 @@ function appendChatMessage(message: ChatMessage) {
   div.querySelectorAll('img').forEach((img) => {
     img.addEventListener('load', scrollToBottom)
   })
+
+  // Process link unfurling
+  processUnfurlPlaceholders(div)
 }
 
 function escapeHtml(text: string): string {
@@ -656,6 +659,148 @@ function processStackableEffects(text: string): string {
   return `<span class="${classes}">${textPart}</span>`
 }
 
+// Link metadata type
+interface LinkMetadata {
+  title: string
+  siteName?: string
+  description?: string
+  image?: string
+  favicon?: string
+}
+
+// Cache for unfurled link metadata
+const linkMetadataCache = new Map<string, LinkMetadata>()
+
+// Get the API base URL for unfurling
+function getApiBaseUrl(): string {
+  // In development, use the local worker; in production, use the deployed worker
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://localhost:8787'
+  }
+  return 'https://fibonacci-mcfibface.stirlingmarketinggroup.workers.dev'
+}
+
+// Fetch link metadata from our worker proxy
+async function fetchLinkMetadata(url: string): Promise<LinkMetadata> {
+  // Check cache first
+  if (linkMetadataCache.has(url)) {
+    return linkMetadataCache.get(url)!
+  }
+
+  try {
+    const apiUrl = `${getApiBaseUrl()}/api/unfurl?url=${encodeURIComponent(url)}`
+    const response = await fetch(apiUrl)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    const data = await response.json()
+    const metadata: LinkMetadata = {
+      title: data.title || new URL(url).hostname,
+      siteName: data.siteName,
+      description: data.description,
+      image: data.image,
+      favicon: data.favicon,
+    }
+    linkMetadataCache.set(url, metadata)
+    return metadata
+  } catch {
+    // Fallback to hostname
+    try {
+      const hostname = new URL(url).hostname
+      const metadata: LinkMetadata = { title: hostname }
+      linkMetadataCache.set(url, metadata)
+      return metadata
+    } catch {
+      return { title: url }
+    }
+  }
+}
+
+// Create a link preview card element
+function createLinkPreviewCard(url: string, metadata: LinkMetadata): HTMLElement {
+  const card = document.createElement('div')
+  card.className = 'link-preview'
+
+  let hostname = ''
+  try {
+    hostname = new URL(url).hostname
+  } catch {
+    hostname = url
+  }
+
+  const hasImage = metadata.image && metadata.image.length > 0
+  const hasFavicon = metadata.favicon && metadata.favicon.length > 0
+  const hasDescription = metadata.description && metadata.description.length > 0
+
+  // Try OG image first, then favicon, then fallback to emoji with gradient
+  let imagePart: string
+  if (hasImage) {
+    // OG image - on error, try favicon, then fallback to emoji
+    const faviconFallback = hasFavicon
+      ? `this.onerror=function(){this.onerror=null;this.classList.add(\\'link-preview-favicon\\');this.src=\\'${escapeHtml(metadata.favicon!).replace(/'/g, "\\'")}\\';};`
+      : `this.onerror=null;this.outerHTML='<div class=\\'link-preview-fallback\\'>🔗</div>';`
+    imagePart = `<img src="${escapeHtml(metadata.image!)}" class="link-preview-image" alt="" onerror="${faviconFallback}" />`
+  } else if (hasFavicon) {
+    // No OG image but has favicon - on error, fallback to emoji
+    imagePart = `<img src="${escapeHtml(metadata.favicon!)}" class="link-preview-favicon" alt="" onerror="this.onerror=null;this.outerHTML='<div class=\\'link-preview-fallback\\'>🔗</div>'" />`
+  } else {
+    // No image or favicon - show emoji with gradient
+    imagePart = `<div class="link-preview-fallback">🔗</div>`
+  }
+
+  card.innerHTML = `
+    <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">
+      ${imagePart}
+      <div class="link-preview-content">
+        <div class="link-preview-title">${escapeHtml(metadata.title)}</div>
+        ${hasDescription ? `<div class="link-preview-description">${escapeHtml(metadata.description!)}</div>` : ''}
+        <div class="link-preview-domain">${metadata.siteName ? escapeHtml(metadata.siteName) + ' - ' : ''}${escapeHtml(hostname)}</div>
+      </div>
+    </a>
+  `
+
+  return card
+}
+
+// Process unfurl placeholders in the DOM
+async function processUnfurlPlaceholders(container: Element) {
+  const placeholders = container.querySelectorAll('.unfurl-placeholder')
+  for (const placeholder of placeholders) {
+    const url = placeholder.getAttribute('data-url')
+    if (!url) continue
+
+    // Skip if already processed
+    if (placeholder.classList.contains('unfurl-loaded')) continue
+    placeholder.classList.add('unfurl-loaded')
+
+    // Fetch metadata asynchronously
+    fetchLinkMetadata(url).then(metadata => {
+      // Replace placeholder with proper link
+      const link = document.createElement('a')
+      link.href = url
+      link.target = '_blank'
+      link.rel = 'noopener noreferrer'
+      link.className = 'text-indigo-400 hover:text-indigo-300 underline'
+      // Use siteName for the link text if available, otherwise use title
+      link.textContent = `(Link to ${metadata.siteName || metadata.title})`
+      placeholder.replaceWith(link)
+
+      // Always add a preview card after the message
+      const messageDiv = link.closest('.text-sm.py-1')
+      if (messageDiv && !messageDiv.querySelector('.link-preview')) {
+        const previewCard = createLinkPreviewCard(url, metadata)
+        messageDiv.appendChild(previewCard)
+
+        // Scroll chat to bottom when preview card is added
+        const chatMessages = document.querySelector('#chat-messages')
+        if (chatMessages) {
+          chatMessages.scrollTop = chatMessages.scrollHeight
+        }
+      }
+    })
+  }
+}
+
 function renderMarkdown(text: string): string {
   // Process stackable effects first (RuneScape style: effect:effect:text)
   let processed = processStackableEffects(text)
@@ -681,6 +826,21 @@ function renderMarkdown(text: string): string {
   processed = processed.replace(
     /https?:\/\/tenor\.com\/view\/[^\s]+/gi,
     (match) => `<img src="${match}.gif" class="chat-sticker" alt="sticker" onerror="this.outerHTML=this.src" />`
+  )
+
+  // Convert remaining plain URLs to unfurl placeholders (not in markdown link syntax)
+  // This regex matches URLs that aren't already in markdown link syntax or converted to images
+  processed = processed.replace(
+    /(?<![(\[])(https?:\/\/[^\s<>"]+)(?![)\]])/gi,
+    (match) => {
+      // Skip if it's already been converted to an image tag
+      if (match.includes('<img')) return match
+      // Skip image URLs (common extensions)
+      if (/\.(gif|png|jpg|jpeg|webp|svg)(\?|$)/i.test(match)) return match
+      // Create unfurl placeholder
+      const escaped = match.replace(/"/g, '&quot;')
+      return `<span class="unfurl-placeholder text-indigo-400" data-url="${escaped}">${match}</span>`
+    }
   )
 
   // Use marked for inline markdown (bold, italic, code, links, strikethrough)
@@ -895,6 +1055,9 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
     // Also use ResizeObserver for dynamically added images
     const resizeObserver = new ResizeObserver(scrollToBottom)
     resizeObserver.observe(chatMessages)
+
+    // Process link unfurling for existing chat messages
+    processUnfurlPlaceholders(chatMessages)
   }
 
   // Event listeners
@@ -1058,8 +1221,8 @@ function renderParticipantCard(participant: Participant, isCurrentUserHost: bool
         showVote
           ? 'bg-indigo-600'
           : hasVoted
-          ? 'bg-gradient-to-br from-indigo-600 to-purple-600'
-          : 'bg-gray-700 border-2 border-dashed border-gray-600'
+          ? 'bg-gradient-to-br from-indigo-600 to-purple-600 voted'
+          : 'bg-gray-700 border-2 border-dashed border-gray-600 not-voted'
       }">
         ${cardContent}
       </div>
