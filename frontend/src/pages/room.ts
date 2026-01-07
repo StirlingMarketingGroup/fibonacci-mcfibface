@@ -674,7 +674,7 @@ const linkMetadataCache = new Map<string, LinkMetadata>()
 // Get the API base URL for unfurling
 function getApiBaseUrl(): string {
   // In development, use the local worker; in production, use the deployed worker
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+  if (import.meta.env.DEV) {
     return 'http://localhost:8787'
   }
   return 'https://fibonacci-mcfibface.stirlingmarketinggroup.workers.dev'
@@ -728,36 +728,72 @@ function createLinkPreviewCard(url: string, metadata: LinkMetadata): HTMLElement
     hostname = url
   }
 
-  const hasImage = metadata.image && metadata.image.length > 0
-  const hasFavicon = metadata.favicon && metadata.favicon.length > 0
-  const hasDescription = metadata.description && metadata.description.length > 0
+  // Create link element
+  const link = document.createElement('a')
+  link.href = url
+  link.target = '_blank'
+  link.rel = 'noopener noreferrer'
 
-  // Try OG image first, then favicon, then fallback to emoji with gradient
-  let imagePart: string
-  if (hasImage) {
-    // OG image - on error, try favicon, then fallback to emoji
-    const faviconFallback = hasFavicon
-      ? `this.onerror=function(){this.onerror=null;this.classList.add(\\'link-preview-favicon\\');this.src=\\'${escapeHtml(metadata.favicon!).replace(/'/g, "\\'")}\\';};`
-      : `this.onerror=null;this.outerHTML='<div class=\\'link-preview-fallback\\'>🔗</div>';`
-    imagePart = `<img src="${escapeHtml(metadata.image!)}" class="link-preview-image" alt="" onerror="${faviconFallback}" />`
-  } else if (hasFavicon) {
-    // No OG image but has favicon - on error, fallback to emoji
-    imagePart = `<img src="${escapeHtml(metadata.favicon!)}" class="link-preview-favicon" alt="" onerror="this.onerror=null;this.outerHTML='<div class=\\'link-preview-fallback\\'>🔗</div>'" />`
-  } else {
-    // No image or favicon - show emoji with gradient
-    imagePart = `<div class="link-preview-fallback">🔗</div>`
+  // Helper to create fallback element
+  const createFallback = () => {
+    const fallback = document.createElement('div')
+    fallback.className = 'link-preview-fallback'
+    fallback.textContent = '🔗'
+    return fallback
   }
 
-  card.innerHTML = `
-    <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">
-      ${imagePart}
-      <div class="link-preview-content">
-        <div class="link-preview-title">${escapeHtml(metadata.title)}</div>
-        ${hasDescription ? `<div class="link-preview-description">${escapeHtml(metadata.description!)}</div>` : ''}
-        <div class="link-preview-domain">${metadata.siteName ? escapeHtml(metadata.siteName) + ' - ' : ''}${escapeHtml(hostname)}</div>
-      </div>
-    </a>
-  `
+  // Create image element with proper event handlers (no XSS risk)
+  let imageNode: HTMLElement
+  if (metadata.image) {
+    const img = document.createElement('img')
+    img.src = metadata.image
+    img.className = 'link-preview-image'
+    img.alt = ''
+    img.onerror = () => {
+      if (metadata.favicon) {
+        img.onerror = () => img.replaceWith(createFallback())
+        img.className = 'link-preview-favicon'
+        img.src = metadata.favicon
+      } else {
+        img.replaceWith(createFallback())
+      }
+    }
+    imageNode = img
+  } else if (metadata.favicon) {
+    const faviconImg = document.createElement('img')
+    faviconImg.src = metadata.favicon
+    faviconImg.className = 'link-preview-favicon'
+    faviconImg.alt = ''
+    faviconImg.onerror = () => faviconImg.replaceWith(createFallback())
+    imageNode = faviconImg
+  } else {
+    imageNode = createFallback()
+  }
+  link.appendChild(imageNode)
+
+  // Create content div
+  const contentDiv = document.createElement('div')
+  contentDiv.className = 'link-preview-content'
+
+  const titleDiv = document.createElement('div')
+  titleDiv.className = 'link-preview-title'
+  titleDiv.textContent = metadata.title
+  contentDiv.appendChild(titleDiv)
+
+  if (metadata.description) {
+    const descDiv = document.createElement('div')
+    descDiv.className = 'link-preview-description'
+    descDiv.textContent = metadata.description
+    contentDiv.appendChild(descDiv)
+  }
+
+  const domainDiv = document.createElement('div')
+  domainDiv.className = 'link-preview-domain'
+  domainDiv.textContent = metadata.siteName ? `${metadata.siteName} - ${hostname}` : hostname
+  contentDiv.appendChild(domainDiv)
+
+  link.appendChild(contentDiv)
+  card.appendChild(link)
 
   return card
 }
