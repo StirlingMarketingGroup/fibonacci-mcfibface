@@ -46,7 +46,7 @@ export default {
           throw new Error('Invalid protocol')
         }
 
-        // Fetch the page with a timeout and limited response size
+        // Fetch the page with a timeout
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 5000)
 
@@ -60,15 +60,11 @@ export default {
         })
         clearTimeout(timeoutId)
 
-        // Don't check response.ok - we still want metadata from 404 pages etc.
-        // as long as they return HTML with a <head> element
-
         // Check content-type, but still try to parse if it might be HTML
         const contentType = response.headers.get('content-type') || ''
         const mightBeHtml = contentType.includes('text/html') || contentType.includes('text/plain') || contentType === ''
 
         if (!mightBeHtml) {
-          // Definitely not HTML - just return the domain as the title
           return new Response(JSON.stringify({ title: parsedUrl.hostname, favicon: parsedUrl.origin + '/favicon.ico' }), {
             headers: {
               'Content-Type': 'application/json',
@@ -78,172 +74,142 @@ export default {
           })
         }
 
-        // Read limited amount of HTML (first 500KB should contain <head>)
-        const reader = response.body?.getReader()
-        let html = ''
-        const decoder = new TextDecoder()
-        const maxBytes = 500 * 1024
-
-        if (reader) {
-          let bytesRead = 0
-          while (bytesRead < maxBytes) {
-            const { done, value } = await reader.read()
-            if (done) break
-            html += decoder.decode(value, { stream: true })
-            bytesRead += value?.length || 0
-            // Stop early if we've found </head>
-            if (html.includes('</head>')) break
-          }
-          reader.cancel()
-        }
-
-        // If no <head> element found, fall back to hostname
-        if (!html.includes('<head') && !html.includes('<HEAD')) {
-          return new Response(JSON.stringify({ title: parsedUrl.hostname, favicon: parsedUrl.origin + '/favicon.ico' }), {
-            headers: {
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*',
-              'Cache-Control': 'public, max-age=86400',
-            },
-          })
-        }
-
-        // Helper to decode HTML entities
+        // Helper to decode HTML entities (including numeric)
         const decodeEntities = (text: string) => text
+          .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num, 10)))
+          .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
           .replace(/&amp;/g, '&')
           .replace(/&lt;/g, '<')
           .replace(/&gt;/g, '>')
           .replace(/&quot;/g, '"')
-          .replace(/&#39;/g, "'")
-          .replace(/&#x27;/g, "'")
-          .replace(/&#x2F;/g, '/')
+          .replace(/&apos;/g, "'")
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&mdash;/g, '—')
+          .replace(/&ndash;/g, '–')
+          .replace(/&hellip;/g, '…')
+          .replace(/&copy;/g, '©')
+          .replace(/&reg;/g, '®')
+          .replace(/&trade;/g, '™')
           .replace(/\s+/g, ' ')
           .trim()
 
-        // Extract title - try OG title first, then regular title
-        let title = ''
-
-        // Try og:title
-        const ogTitleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)
-          || html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i)
-        if (ogTitleMatch) {
-          title = ogTitleMatch[1]
-        }
-
-        // Fall back to <title> tag
-        if (!title) {
-          const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
-          if (titleMatch) {
-            title = titleMatch[1]
+        // Helper to resolve relative URLs
+        const resolveUrl = (relativeUrl: string): string => {
+          if (!relativeUrl || relativeUrl.startsWith('http')) return relativeUrl
+          try {
+            return new URL(relativeUrl, parsedUrl.origin).href
+          } catch {
+            return ''
           }
         }
 
-        title = decodeEntities(title)
-
-        // If no title found, use hostname
-        if (!title) {
-          title = parsedUrl.hostname
+        // Use HTMLRewriter to parse metadata
+        const metadata: {
+          title: string
+          siteName: string
+          description: string
+          image: string
+          favicon: string
+          foundHead: boolean
+        } = {
+          title: '',
+          siteName: '',
+          description: '',
+          image: '',
+          favicon: '',
+          foundHead: false,
         }
 
-        // Truncate very long titles
+        // Create a pass-through response to process with HTMLRewriter
+        const rewriter = new HTMLRewriter()
+          .on('head', {
+            element() {
+              metadata.foundHead = true
+            }
+          })
+          .on('title', {
+            text(text) {
+              if (!metadata.title) {
+                metadata.title += text.text
+              }
+            }
+          })
+          .on('meta', {
+            element(el) {
+              const property = el.getAttribute('property')
+              const name = el.getAttribute('name')
+              const content = el.getAttribute('content')
+
+              if (!content) return
+
+              // OG metadata
+              if (property === 'og:title' && !metadata.title) {
+                metadata.title = content
+              } else if (property === 'og:site_name' && !metadata.siteName) {
+                metadata.siteName = content
+              } else if (property === 'og:description' && !metadata.description) {
+                metadata.description = content
+              } else if (property === 'og:image' && !metadata.image) {
+                metadata.image = content
+              }
+
+              // Twitter metadata fallbacks
+              if (name === 'twitter:image' && !metadata.image) {
+                metadata.image = content
+              }
+
+              // Standard meta description fallback
+              if (name === 'description' && !metadata.description) {
+                metadata.description = content
+              }
+            }
+          })
+          .on('link', {
+            element(el) {
+              const rel = el.getAttribute('rel') || ''
+              const href = el.getAttribute('href')
+
+              if (!href) return
+
+              // Favicon detection (prefer apple-touch-icon, then icon)
+              if (rel.includes('apple-touch-icon') && !metadata.favicon) {
+                metadata.favicon = href
+              } else if ((rel === 'icon' || rel === 'shortcut icon') && !metadata.favicon) {
+                metadata.favicon = href
+              }
+            }
+          })
+
+        // Process the response through HTMLRewriter
+        const transformed = rewriter.transform(response)
+        await transformed.text() // Consume the response to trigger parsing
+
+        // If no head found, fall back to hostname
+        if (!metadata.foundHead) {
+          return new Response(JSON.stringify({ title: parsedUrl.hostname, favicon: parsedUrl.origin + '/favicon.ico' }), {
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+              'Cache-Control': 'public, max-age=86400',
+            },
+          })
+        }
+
+        // Process and clean up metadata
+        let title = decodeEntities(metadata.title) || parsedUrl.hostname
         if (title.length > 100) {
           title = title.substring(0, 97) + '...'
         }
 
-        // Extract og:site_name (used for the inline link text)
-        let siteName = ''
-        const siteNameMatch = html.match(/<meta[^>]*property=["']og:site_name["'][^>]*content=["']([^"']+)["']/i)
-          || html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:site_name["']/i)
-        if (siteNameMatch) {
-          siteName = decodeEntities(siteNameMatch[1])
-        }
+        const siteName = decodeEntities(metadata.siteName)
 
-        // Extract description - try OG description first, then meta description
-        let description = ''
-
-        const ogDescMatch = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i)
-          || html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:description["']/i)
-        if (ogDescMatch) {
-          description = ogDescMatch[1]
-        }
-
-        if (!description) {
-          const metaDescMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i)
-            || html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']description["']/i)
-          if (metaDescMatch) {
-            description = metaDescMatch[1]
-          }
-        }
-
-        description = decodeEntities(description)
-
-        // Truncate very long descriptions
+        let description = decodeEntities(metadata.description)
         if (description.length > 200) {
           description = description.substring(0, 197) + '...'
         }
 
-        // Extract image - try OG image first, then twitter:image
-        let image = ''
-
-        const ogImageMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)
-          || html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i)
-        if (ogImageMatch) {
-          image = ogImageMatch[1]
-        }
-
-        if (!image) {
-          const twitterImageMatch = html.match(/<meta[^>]*name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i)
-            || html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']twitter:image["']/i)
-          if (twitterImageMatch) {
-            image = twitterImageMatch[1]
-          }
-        }
-
-        // Make relative image URLs absolute
-        if (image && !image.startsWith('http')) {
-          if (image.startsWith('//')) {
-            image = 'https:' + image
-          } else if (image.startsWith('/')) {
-            image = parsedUrl.origin + image
-          } else {
-            image = parsedUrl.origin + '/' + image
-          }
-        }
-
-        // Extract favicon - try various link tags, fall back to /favicon.ico
-        let favicon = ''
-
-        // Try apple-touch-icon first (usually higher quality)
-        const appleTouchMatch = html.match(/<link[^>]*rel=["']apple-touch-icon["'][^>]*href=["']([^"']+)["']/i)
-          || html.match(/<link[^>]*href=["']([^"']+)["'][^>]*rel=["']apple-touch-icon["']/i)
-        if (appleTouchMatch) {
-          favicon = appleTouchMatch[1]
-        }
-
-        // Try standard icon
-        if (!favicon) {
-          const iconMatch = html.match(/<link[^>]*rel=["'](?:shortcut )?icon["'][^>]*href=["']([^"']+)["']/i)
-            || html.match(/<link[^>]*href=["']([^"']+)["'][^>]*rel=["'](?:shortcut )?icon["']/i)
-          if (iconMatch) {
-            favicon = iconMatch[1]
-          }
-        }
-
-        // Fall back to /favicon.ico
-        if (!favicon) {
-          favicon = '/favicon.ico'
-        }
-
-        // Make relative favicon URLs absolute
-        if (favicon && !favicon.startsWith('http')) {
-          if (favicon.startsWith('//')) {
-            favicon = 'https:' + favicon
-          } else if (favicon.startsWith('/')) {
-            favicon = parsedUrl.origin + favicon
-          } else {
-            favicon = parsedUrl.origin + '/' + favicon
-          }
-        }
+        const image = resolveUrl(metadata.image)
+        const favicon = resolveUrl(metadata.favicon) || parsedUrl.origin + '/favicon.ico'
 
         // Build response object
         const result: { title: string; siteName?: string; description?: string; image?: string; favicon?: string } = { title }

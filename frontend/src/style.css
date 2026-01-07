@@ -200,13 +200,11 @@
   height: 5rem;
   overflow: hidden;
   margin: 0.5rem;
-  border-radius: 0.25rem;
+  border-radius: 0.5rem;
   flex-shrink: 0;
   object-fit: contain;
   object-position: center;
   background: linear-gradient(to bottom right, #4f46e5, #9333ea);
-  border-radius: 0.5rem;
-  overflow: hidden;
   padding: 20px;
   box-sizing: border-box;
 }
