@@ -129,6 +129,9 @@ const STICKERS: Record<string, { url: string; alt: string }> = {
   'coffee': { url: 'https://media.giphy.com/media/DrJm6F9poo4aA/giphy.gif', alt: 'Need coffee' },
   'confused': { url: 'https://media.giphy.com/media/WRQBXSCnEFJIuxktnw/giphy.gif', alt: 'Confused math' },
   'fishspin': { url: 'https://media.giphy.com/media/Q6PVNqdO6FrrN6LB4C/giphy.gif', alt: 'Spinning fish' },
+  'really': { url: 'https://media.giphy.com/media/Ci3nCVx952lfG/giphy.gif', alt: 'Disappointed dog' },
+  'america': { url: 'https://media.giphy.com/media/108n9BhJkdRwpa/giphy.gif', alt: 'Eagle and Flag' },
+  'catyes': { url: 'https://media.giphy.com/media/GuDU8r5CnUoYtbS2CR/giphy.gif', alt: 'Cat nodding yes' },
 }
 
 // Slash commands - maps command to replacement text

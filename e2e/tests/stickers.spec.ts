@@ -38,8 +38,8 @@ test.describe('GIF Stickers', () => {
     await alice.page.click('#sticker-btn')
 
     const stickerOptions = alice.page.locator('.sticker-option')
-    // We have 12 stickers defined
-    await expect(stickerOptions).toHaveCount(12)
+    // We have 16 stickers defined
+    await expect(stickerOptions).toHaveCount(16)
   })
 
   test('clicking sticker sends it to chat', async ({ createUsers }) => {
