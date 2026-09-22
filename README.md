@@ -54,6 +54,8 @@ Special votes:
 
 ## Local Development
 
+Requires Node.js 22 or newer. CI and deployment use Node.js 22.
+
 ```bash
 # Frontend (runs on :5173)
 cd frontend && npm install && npm run dev
