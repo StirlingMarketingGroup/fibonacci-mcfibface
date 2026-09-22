@@ -1045,7 +1045,7 @@ function renderRoom(app: HTMLDivElement, roomId: string) {
               <div id="sticker-picker" class="absolute bottom-10 right-0 w-72 p-2 bg-gray-800 border border-gray-600 rounded-lg shadow-xl hidden z-50">
                 <div class="text-xs text-gray-400 mb-2 font-bold">Stickers</div>
                 <div class="grid grid-cols-4 gap-1">
-                  ${Object.entries(STICKERS).map(([name, sticker]) => `
+                  ${Object.values(STICKERS).map((sticker) => `
                     <button type="button" class="sticker-option p-1 rounded hover:bg-gray-700 transition-colors" data-sticker-url="${sticker.url}" title="${sticker.alt}">
                       <img src="${sticker.url}" alt="${sticker.alt}" class="w-14 h-14 object-cover rounded" loading="lazy" />
                     </button>

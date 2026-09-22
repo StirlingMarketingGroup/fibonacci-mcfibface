@@ -18,7 +18,11 @@ export class RoomConnection {
   private pingTimer: number | null = null
   private pongTimer: number | null = null
 
-  constructor(private roomId: string) {}
+  private roomId: string
+
+  constructor(roomId: string) {
+    this.roomId = roomId
+  }
 
   private getUrl(): string {
     const isLocalApi = API_HOST === window.location.host
@@ -110,12 +114,13 @@ export class RoomConnection {
       this.ws = new WebSocket(this.getUrl())
 
       // Special handling for first connect - reject on error
-      const originalOnError = this.ws.onerror
-      this.ws.onerror = () => {
+      const ws = this.ws
+      const originalOnError = ws.onerror
+      ws.onerror = (event) => {
         if (this.reconnectAttempt === 0) {
           reject(new Error('WebSocket connection failed'))
         }
-        originalOnError?.call(this.ws)
+        originalOnError?.call(ws, event)
       }
 
       this.setupWebSocket(this.ws, resolve)
